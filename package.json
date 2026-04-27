@@ -8,7 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "16.1.6",
+    "@mysten/dapp-kit-core": "^1.3.0",
+    "@mysten/dapp-kit-react": "^2.0.1",
+    "@mysten/sui": "^2.16.0",
+    "@tanstack/react-query": "^5.90.21",
+    "next": "^16.2.4",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
