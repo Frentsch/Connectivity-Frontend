@@ -2,11 +2,6 @@
 
 import { useState, useEffect } from "react";
 
-// Sui events return vector<u8> as base64 in parsedJson (unlike object content which uses number[]).
-function base64ToHex(b64: string): string {
-  const binary = atob(b64);
-  return Array.from(binary, (c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("");
-}
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { dAppKit } from "@/lib/dappkit";
@@ -16,7 +11,7 @@ import { EVENT_REDEMPTION_DELIVERY } from "@/lib/constants";
 interface RedemptionDeliveryParsed {
   token_id: string;
   redeemed_by: string;
-  encrypted_auth_key: string;
+  encrypted_auth_key: number[];
 }
 
 interface Props {
@@ -40,7 +35,7 @@ export function TokenCard({ tokenObject }: Props) {
 
   type RedeemState = "idle" | "redeeming" | "waiting" | "delivered" | "error";
   const [redeemState, setRedeemState] = useState<RedeemState>("idle");
-  const [deliveredKey, setDeliveredKey] = useState<string | null>(null);
+  const [deliveredKey, setDeliveredKey] = useState<number[] | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -87,9 +82,16 @@ export function TokenCard({ tokenObject }: Props) {
         if (new Secp256k1PublicKey(rawPubkey).toSuiAddress() === account.address) flag = 0x01;
       } catch { /* not Secp256k1, keep Secp256r1 default */ }
     }
-    const pubkeyWithFlag = new Uint8Array(rawPubkey.length + 1);
+
+    // Sui wallets expose compressed EC keys with parity 0x00/0x01 instead of
+    // the SEC1 standard 0x02/0x03. Normalize so the orchestrator's noble-curves
+    // calls receive a valid compressed point.
+    let pubkey = new Uint8Array(rawPubkey);
+    if (pubkey.length === 33 && pubkey[0] <= 1) pubkey[0] += 2;
+
+    const pubkeyWithFlag = new Uint8Array(pubkey.length + 1);
     pubkeyWithFlag[0] = flag;
-    pubkeyWithFlag.set(rawPubkey, 1);
+    pubkeyWithFlag.set(pubkey, 1);
 
     try {
       await dAppKit.signAndExecuteTransaction({
@@ -140,8 +142,18 @@ export function TokenCard({ tokenObject }: Props) {
             <td style={{ color: "#666", paddingRight: "1rem", fontSize: 13, whiteSpace: "nowrap" }}>Bandwidth</td>
             <td style={{ fontSize: 13 }}>{fields.bandwidth ? `${fields.bandwidth} kB/s` : "—"}</td>
           </tr>
+          {fields.issuer && (
+            <tr>
+              <td style={{ color: "#666", paddingRight: "1rem", fontSize: 13, whiteSpace: "nowrap" }}>Issuer</td>
+              <td style={{ fontFamily: "monospace", fontSize: 11, wordBreak: "break-all" }}>{fields.issuer}</td>
+            </tr>
+          )}
         </tbody>
       </table>
+
+      <div style={{ marginTop: "0.5rem", textAlign: "right" }}>
+        <a href={`/tokens/${tokenId}`} style={{ fontSize: 12, color: "#888" }}>View details →</a>
+      </div>
 
       {!isExpired && (
         <div style={{ marginTop: "1rem", borderTop: "1px solid #eee", paddingTop: "0.75rem" }}>
@@ -162,7 +174,7 @@ export function TokenCard({ tokenObject }: Props) {
             </p>
           )}
           {redeemState === "delivered" && deliveredKey && (() => {
-            const hexKey = base64ToHex(deliveredKey);
+            const hexKey = deliveredKey.map((b) => b.toString(16).padStart(2, "0")).join("");
             return (
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>

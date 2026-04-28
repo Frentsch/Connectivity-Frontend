@@ -25,6 +25,9 @@ export default function ListingDetailPage({ params }: Props) {
   // The Sui RPC wraps embedded objects as { type, fields }, so we read the inner fields.
   const token = ((fields.token as any)?.fields ?? fields.token) as Record<string, string> | undefined;
 
+  // AccessToken ID is nested as token.id.id (Sui represents UID as { id: "0x..." })
+  const tokenId = (token as any)?.id?.id as string | undefined;
+
   const priceSui = (Number(fields.price_mist as string) / 1e9).toFixed(4);
   const validFrom  = BigInt(token?.valid_from  ?? "0");
   const expiresAt  = BigInt(token?.expires_at  ?? "0");
@@ -76,6 +79,7 @@ export default function ListingDetailPage({ params }: Props) {
 
       <BuyButton
         listingId={id}
+        tokenId={tokenId}
         validFrom={validFrom}
         priceMist={BigInt((fields.price_mist as string) ?? "0")}
         expiresAt={expiresAt}

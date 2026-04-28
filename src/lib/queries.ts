@@ -3,6 +3,22 @@ import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { dAppKit } from "./dappkit";
 import { TOKEN_TYPE, ACCESS_KEY_TYPE, MARKETPLACE_ID } from "./constants";
 
+/**
+ * Returns the set of AccessToken object IDs currently owned by `address`.
+ * Used by BuyButton to identify the newly created token after a purchase.
+ */
+export async function fetchOwnedTokenIds(address: string): Promise<Set<string>> {
+  const result = await dAppKit.getClient().getOwnedObjects({
+    owner: address,
+    filter: { StructType: TOKEN_TYPE },
+    options: {},
+  });
+  return new Set(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    result.data.map((o: any) => o.data?.objectId as string | undefined).filter((id): id is string => !!id)
+  );
+}
+
 export function useListings() {
   return useQuery({
     queryKey: ["listings", MARKETPLACE_ID],
@@ -74,7 +90,7 @@ export function useToken(tokenId: string) {
   return useQuery({
     queryKey: ["getObject", tokenId],
     queryFn: () =>
-      dAppKit.getClient().getObject({ id: tokenId, options: { showContent: true, showOwner: true } }),
+      dAppKit.getClient().getObject({ id: tokenId, options: { showContent: true, showOwner: true, showType: true } }),
     enabled: !!tokenId,
   });
 }

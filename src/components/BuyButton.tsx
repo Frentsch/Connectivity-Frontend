@@ -1,25 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { dAppKit } from "@/lib/dappkit";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { buildPurchaseTx } from "@/lib/transactions";
+import { fetchOwnedTokenIds } from "@/lib/queries";
 
 interface Props {
   listingId: string;
+  tokenId?: string;
   priceMist: bigint;
   validFrom: bigint;
   expiresAt: bigint;
   bandwidth: bigint;
 }
 
-export function BuyButton({ listingId, priceMist, validFrom, expiresAt, bandwidth }: Props) {
+export function BuyButton({ listingId, tokenId, priceMist, validFrom, expiresAt, bandwidth }: Props) {
   const account = useCurrentAccount();
+  const router  = useRouter();
   const [isPending, setIsPending] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
 
   if (!account) return <p>Connect your wallet to purchase.</p>;
-  if (isSuccess) return <p style={{ color: "green" }}>Purchased! Check <a href="/tokens">My Tokens</a>.</p>;
 
   return (
     <button
@@ -27,9 +29,9 @@ export function BuyButton({ listingId, priceMist, validFrom, expiresAt, bandwidt
         const tx = buildPurchaseTx({ listingId, start: validFrom, end: expiresAt, bandwidth });
         setIsPending(true);
         try {
-          const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
-          console.log("Purchased:", result.$kind === "Transaction" ? result.Transaction.digest : result);
-          setIsSuccess(true);
+          await dAppKit.signAndExecuteTransaction({ transaction: tx });
+
+          if(tokenId!=null)router.push(`/tokens/${tokenId}`);
         } catch (err: unknown) {
           alert(`Purchase failed: ${err instanceof Error ? err.message : "Unknown error"}`);
         } finally {
