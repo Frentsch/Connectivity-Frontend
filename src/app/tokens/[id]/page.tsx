@@ -8,12 +8,9 @@ import { useQuery } from "@tanstack/react-query";
 import { dAppKit } from "@/lib/dappkit";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY, TOKEN_TYPE, ACCESS_KEY_TYPE } from "@/lib/constants";
+import { signingMessage, parseSuiSignature, deriveEcdhKey, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function bytesToHex(bytes: number[]): string {
-  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 function fmtTime(secs: string | undefined): string {
   if (!secs) return "—";
@@ -49,7 +46,10 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
 
   type RedeemState = "idle" | "redeeming" | "waiting" | "delivered" | "error";
   const [redeemState, setRedeemState]   = useState<RedeemState>("idle");
+  const [privKey, setPrivKey]           = useState<Uint8Array | null>(null);
   const [deliveredKey, setDeliveredKey] = useState<number[] | null>(null);
+  const [plaintext, setPlaintext]       = useState<string | null>(null);
+  const [decryptError, setDecryptError] = useState<string | null>(null);
   const [errorMsg, setErrorMsg]         = useState<string | null>(null);
   const [copied, setCopied]             = useState(false);
 
@@ -77,6 +77,13 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
       const p = match.parsedJson as RedemptionDeliveryParsed;
       setDeliveredKey(p.encrypted_auth_key);
       setRedeemState("delivered");
+      // Auto-decrypt if we still have the private key in state
+      if (privKey) {
+        const ct = new Uint8Array(p.encrypted_auth_key);
+        eciesDecrypt(ct, privKey)
+          .then((plain) => setPlaintext(new TextDecoder().decode(plain)))
+          .catch((e) => setDecryptError(e instanceof Error ? e.message : "Decryption failed"));
+      }
     }
   }
 
@@ -85,28 +92,36 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
     setErrorMsg(null);
     setRedeemState("redeeming");
 
-    const rawPubkey = account.publicKey;
-    let flag = 0x02;
-    if (rawPubkey.length === 32) {
-      flag = 0x00;
-    } else {
-      try {
-        const { Secp256k1PublicKey } = await import("@mysten/sui/keypairs/secp256k1");
-        if (new Secp256k1PublicKey(rawPubkey).toSuiAddress() === account.address) flag = 0x01;
-      } catch { /* keep Secp256r1 default */ }
-    }
-    const pubkeyWithFlag = new Uint8Array(rawPubkey.length + 1);
-    pubkeyWithFlag[0] = flag;
-    pubkeyWithFlag.set(rawPubkey, 1);
-
     try {
+      const msg = signingMessage(objectId);
+      const result = await dAppKit.signPersonalMessage({ message: msg });
+      const sigBytes = parseSuiSignature(result.signature);
+      const { priv, pub } = deriveEcdhKey(sigBytes, objectId);
+      setPrivKey(priv);
+
+      const clientPubkey = buildClientPubkey(pub);
       await dAppKit.signAndExecuteTransaction({
-        transaction: buildRedeemTx({ tokenId: objectId, clientPubkey: pubkeyWithFlag }),
+        transaction: buildRedeemTx({ tokenId: objectId, clientPubkey }),
       });
       setRedeemState("waiting");
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Redemption failed");
       setRedeemState("error");
+    }
+  }
+
+  async function handleDecrypt() {
+    if (!account || !deliveredKey) return;
+    setDecryptError(null);
+    try {
+      const msg = signingMessage(objectId);
+      const result = await dAppKit.signPersonalMessage({ message: msg });
+      const sigBytes = parseSuiSignature(result.signature);
+      const { priv } = deriveEcdhKey(sigBytes, objectId);
+      const plain = await eciesDecrypt(new Uint8Array(deliveredKey), priv);
+      setPlaintext(new TextDecoder().decode(plain));
+    } catch (e) {
+      setDecryptError(e instanceof Error ? e.message : "Decryption failed");
     }
   }
 
@@ -124,13 +139,13 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
 
       <table style={{ borderCollapse: "collapse", marginBottom: "1.5rem" }}>
         <tbody>
-          <Row label="Object ID"  value={objectId}          mono />
+          <Row label="Object ID"  value={objectId}            mono />
           <Row label="Service"    value={fields.service_name} />
-          <Row label="Endpoint"   value={fields.ip_address}  />
+          <Row label="Endpoint"   value={fields.ip_address}   />
           <Row label="Valid from" value={fmtTime(fields.valid_from)} />
           <Row label="Expires"    value={fmtTime(fields.expires_at)} />
           <Row label="Bandwidth"  value={fields.bandwidth ? `${fields.bandwidth} kB/s` : "—"} />
-          <Row label="Issuer"     value={fields.issuer}      mono />
+          <Row label="Issuer"     value={fields.issuer}        mono />
         </tbody>
       </table>
 
@@ -144,32 +159,39 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
               Redeem Token
             </button>
           )}
-          {redeemState === "redeeming" && <p>Submitting redemption transaction…</p>}
+          {redeemState === "redeeming" && <p>Signing and submitting redemption…</p>}
           {redeemState === "waiting" && (
             <p style={{ color: "#888" }}>⏳ Waiting for service provider to deliver auth key…</p>
           )}
-          {redeemState === "delivered" && deliveredKey && (() => {
-            const hexKey = bytesToHex(deliveredKey);
-            return (
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
-                  <p style={{ color: "green", margin: 0, fontWeight: 600 }}>
-                    ✓ Auth key received
-                  </p>
-                  <button
-                    onClick={async () => { await navigator.clipboard.writeText(hexKey); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                    style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem" }}
-                  >
-                    {copied ? "Copied!" : "Copy"}
+          {redeemState === "delivered" && deliveredKey && (
+            <div>
+              {plaintext != null ? (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
+                    <p style={{ color: "green", margin: 0, fontWeight: 600 }}>✓ Preauthkey decrypted</p>
+                    <button
+                      onClick={async () => { await navigator.clipboard.writeText(plaintext); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                      style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem" }}
+                    >
+                      {copied ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                  <textarea readOnly value={plaintext} rows={2}
+                    style={{ width: "100%", fontFamily: "monospace", fontSize: 12, boxSizing: "border-box" }}
+                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                  />
+                </>
+              ) : (
+                <div>
+                  <p style={{ color: "green", margin: "0 0 0.5rem", fontWeight: 600 }}>✓ Auth key received</p>
+                  {decryptError && <p style={{ color: "red", fontSize: 13, margin: "0 0 0.5rem" }}>{decryptError}</p>}
+                  <button onClick={handleDecrypt} style={{ padding: "0.4rem 1.2rem", fontSize: "0.9rem" }}>
+                    Decrypt with wallet
                   </button>
                 </div>
-                <textarea readOnly value={hexKey} rows={4}
-                  style={{ width: "100%", fontFamily: "monospace", fontSize: 12, boxSizing: "border-box" }}
-                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                />
-              </div>
-            );
-          })()}
+              )}
+            </div>
+          )}
           {redeemState === "error" && (
             <div>
               <p style={{ color: "red" }}>Error: {errorMsg}</p>
@@ -191,8 +213,32 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
     issuer: string; auth_key: number[];
   };
 
-  const hexKey = bytesToHex(f.auth_key ?? []);
-  const [copied, setCopied] = useState(false);
+  const [plaintext, setPlaintext]       = useState<string | null>(null);
+  const [decryptError, setDecryptError] = useState<string | null>(null);
+  const [decrypting, setDecrypting]     = useState(false);
+  const [copied, setCopied]             = useState(false);
+
+  const account = useCurrentAccount();
+
+  async function handleDecrypt() {
+    if (!account) return;
+    setDecryptError(null);
+    setDecrypting(true);
+    try {
+      // The signing message uses the original token_id, not the AccessKey object ID
+      const msg = signingMessage(f.token_id);
+      const result = await dAppKit.signPersonalMessage({ message: msg });
+      const sigBytes = parseSuiSignature(result.signature);
+      const { priv } = deriveEcdhKey(sigBytes, f.token_id);
+      const ct = new Uint8Array(f.auth_key ?? []);
+      const plain = await eciesDecrypt(ct, priv);
+      setPlaintext(new TextDecoder().decode(plain));
+    } catch (e) {
+      setDecryptError(e instanceof Error ? e.message : "Decryption failed");
+    } finally {
+      setDecrypting(false);
+    }
+  }
 
   return (
     <div>
@@ -218,21 +264,41 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
       </table>
 
       <div style={{ borderTop: "1px solid #d4edda", paddingTop: "1rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
-          <p style={{ margin: 0, fontWeight: 600, color: "#333" }}>
-            Encrypted auth key (hex, encrypted for your public key):
-          </p>
-          <button
-            onClick={async () => { await navigator.clipboard.writeText(hexKey); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-            style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem" }}
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </div>
-        <textarea readOnly value={hexKey} rows={4}
-          style={{ width: "100%", fontFamily: "monospace", fontSize: 12, boxSizing: "border-box" }}
-          onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-        />
+        {plaintext != null ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
+              <p style={{ margin: 0, fontWeight: 600, color: "green" }}>✓ Preauthkey decrypted</p>
+              <button
+                onClick={async () => { await navigator.clipboard.writeText(plaintext); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem" }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <textarea readOnly value={plaintext} rows={2}
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 12, boxSizing: "border-box" }}
+              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            />
+          </>
+        ) : (
+          <div>
+            <p style={{ margin: "0 0 0.75rem", color: "#555", fontSize: 14 }}>
+              Sign with your wallet to decrypt the auth key for this service.
+            </p>
+            {decryptError && <p style={{ color: "red", fontSize: 13, margin: "0 0 0.5rem" }}>{decryptError}</p>}
+            {!account ? (
+              <p style={{ color: "#aaa", fontSize: 13 }}>Connect wallet to decrypt.</p>
+            ) : (
+              <button
+                onClick={handleDecrypt}
+                disabled={decrypting}
+                style={{ padding: "0.5rem 1.5rem", fontSize: "0.9rem", opacity: decrypting ? 0.6 : 1 }}
+              >
+                {decrypting ? "Decrypting…" : "Decrypt with wallet"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -254,10 +320,9 @@ export default function TokenDetailPage({ params }: { params: Promise<{ id: stri
       {error    && <p style={{ color: "red" }}>Failed to load object: {String(error)}</p>}
 
       {data?.data && (() => {
-        const obj       = data.data;
-        // content.type is always present with showContent:true; obj.type requires showType:true
-        const objType   = (obj.content as any)?.type ?? obj.type ?? "";
-        const fields    = (obj.content as any)?.fields as Record<string, unknown> ?? {};
+        const obj     = data.data;
+        const objType = (obj.content as any)?.type ?? obj.type ?? "";
+        const fields  = (obj.content as any)?.fields as Record<string, unknown> ?? {};
 
         if (objType.includes(TOKEN_TYPE) || objType.endsWith("::access_token::AccessToken")) {
           return <AccessTokenDetail objectId={obj.objectId} fields={fields as Record<string, string>} />;

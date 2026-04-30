@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { dAppKit } from "@/lib/dappkit";
+import { signingMessage, parseSuiSignature, deriveEcdhKey, eciesDecrypt } from "@/lib/crypto";
 
 interface Props {
   accessKeyObject: {
@@ -10,11 +13,6 @@ interface Props {
       fields: Record<string, unknown>;
     };
   };
-}
-
-// Sui JSON RPC returns vector<u8> as number[] in parsed object content.
-function bytesToHex(bytes: number[]): string {
-  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function fmtTime(secs: string | undefined): string {
@@ -38,14 +36,32 @@ export function AccessKeyCard({ accessKeyObject }: Props) {
     | undefined;
   if (!fields) return null;
 
-  const keyId  = accessKeyObject.objectId;
-  const hexKey = bytesToHex(fields.auth_key);
-  const [copied, setCopied] = useState(false);
+  const keyId = accessKeyObject.objectId;
 
-  async function copyKey() {
-    await navigator.clipboard.writeText(hexKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const [plaintext, setPlaintext]       = useState<string | null>(null);
+  const [decryptError, setDecryptError] = useState<string | null>(null);
+  const [decrypting, setDecrypting]     = useState(false);
+  const [copied, setCopied]             = useState(false);
+
+  const account = useCurrentAccount();
+
+  async function handleDecrypt() {
+    if (!account || !fields) return;
+    setDecryptError(null);
+    setDecrypting(true);
+    try {
+      // Sign using the original token_id so the key matches what was used at redeem time
+      const msg = signingMessage(fields.token_id);
+      const result = await dAppKit.signPersonalMessage({ message: msg });
+      const sigBytes = parseSuiSignature(result.signature);
+      const { priv } = deriveEcdhKey(sigBytes, fields.token_id);
+      const plain = await eciesDecrypt(new Uint8Array(fields.auth_key ?? []), priv);
+      setPlaintext(new TextDecoder().decode(plain));
+    } catch (e) {
+      setDecryptError(e instanceof Error ? e.message : "Decryption failed");
+    } finally {
+      setDecrypting(false);
+    }
   }
 
   return (
@@ -93,24 +109,42 @@ export function AccessKeyCard({ accessKeyObject }: Props) {
       </div>
 
       <div style={{ marginTop: "0.75rem", borderTop: "1px solid #d4edda", paddingTop: "0.75rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
-          <p style={{ fontSize: 13, color: "#666", margin: 0 }}>
-            Encrypted auth key (hex, encrypted for your public key):
-          </p>
-          <button
-            onClick={copyKey}
-            style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem", flexShrink: 0 }}
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </div>
-        <textarea
-          readOnly
-          value={hexKey}
-          rows={3}
-          style={{ width: "100%", fontFamily: "monospace", fontSize: 11, boxSizing: "border-box" }}
-          onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-        />
+        {plaintext != null ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
+              <p style={{ fontSize: 13, color: "green", fontWeight: 600, margin: 0 }}>✓ Preauthkey decrypted</p>
+              <button
+                onClick={async () => { await navigator.clipboard.writeText(plaintext); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem", flexShrink: 0 }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <textarea
+              readOnly value={plaintext} rows={2}
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 11, boxSizing: "border-box" }}
+              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            />
+          </>
+        ) : (
+          <div>
+            <p style={{ fontSize: 13, color: "#666", margin: "0 0 0.5rem" }}>
+              Sign with your wallet to decrypt the auth key.
+            </p>
+            {decryptError && <p style={{ color: "red", fontSize: 12, margin: "0 0 0.4rem" }}>{decryptError}</p>}
+            {!account ? (
+              <p style={{ fontSize: 12, color: "#aaa", margin: 0 }}>Connect wallet to decrypt.</p>
+            ) : (
+              <button
+                onClick={handleDecrypt}
+                disabled={decrypting}
+                style={{ fontSize: 13, padding: "4px 12px", cursor: "pointer", opacity: decrypting ? 0.6 : 1 }}
+              >
+                {decrypting ? "Decrypting…" : "Decrypt with wallet"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

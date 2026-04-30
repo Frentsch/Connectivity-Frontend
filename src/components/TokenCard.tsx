@@ -7,6 +7,7 @@ import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { dAppKit } from "@/lib/dappkit";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY } from "@/lib/constants";
+import { signingMessage, parseSuiSignature, deriveEcdhKey, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
 
 interface RedemptionDeliveryParsed {
   token_id: string;
@@ -35,9 +36,12 @@ export function TokenCard({ tokenObject }: Props) {
 
   type RedeemState = "idle" | "redeeming" | "waiting" | "delivered" | "error";
   const [redeemState, setRedeemState] = useState<RedeemState>("idle");
+  const [privKey, setPrivKey]         = useState<Uint8Array | null>(null);
   const [deliveredKey, setDeliveredKey] = useState<number[] | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [plaintext, setPlaintext]     = useState<string | null>(null);
+  const [decryptError, setDecryptError] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg]       = useState<string | null>(null);
+  const [copied, setCopied]           = useState(false);
 
   const account = useCurrentAccount();
 
@@ -66,41 +70,55 @@ export function TokenCard({ tokenObject }: Props) {
     }
   }, [deliveryEvents, redeemState, tokenId]);
 
+  // Auto-decrypt once the key arrives and we still hold privKey in state
+  useEffect(() => {
+    if (redeemState !== "delivered" || !deliveredKey || !privKey) return;
+    const ct = new Uint8Array(deliveredKey);
+    eciesDecrypt(ct, privKey)
+      .then((plain) => setPlaintext(new TextDecoder().decode(plain)))
+      .catch((e) => setDecryptError(e instanceof Error ? e.message : "Decryption failed"));
+  }, [redeemState, deliveredKey, privKey]);
+
   async function handleRedeem() {
     if (!account) return;
     setErrorMsg(null);
     setRedeemState("redeeming");
 
-    const rawPubkey = account.publicKey;
-    let flag = 0x02; // default: Secp256r1 (Slush wallet)
-    if (rawPubkey.length === 32) {
-      flag = 0x00; // Ed25519
-    } else {
-      // Distinguish Secp256k1 (0x01) from Secp256r1 (0x02) by address derivation
-      try {
-        const { Secp256k1PublicKey } = await import("@mysten/sui/keypairs/secp256k1");
-        if (new Secp256k1PublicKey(rawPubkey).toSuiAddress() === account.address) flag = 0x01;
-      } catch { /* not Secp256k1, keep Secp256r1 default */ }
-    }
-
-    // Sui wallets expose compressed EC keys with parity 0x00/0x01 instead of
-    // the SEC1 standard 0x02/0x03. Normalize so the orchestrator's noble-curves
-    // calls receive a valid compressed point.
-    let pubkey = new Uint8Array(rawPubkey);
-    if (pubkey.length === 33 && pubkey[0] <= 1) pubkey[0] += 2;
-
-    const pubkeyWithFlag = new Uint8Array(pubkey.length + 1);
-    pubkeyWithFlag[0] = flag;
-    pubkeyWithFlag.set(pubkey, 1);
-
     try {
+      // 1. Sign deterministic message → derive X25519 keypair
+      const msg = signingMessage(tokenId);
+      const result = await dAppKit.signPersonalMessage({ message: msg });
+      const sigBytes = parseSuiSignature(result.signature);
+      const { priv, pub } = deriveEcdhKey(sigBytes, tokenId);
+      setPrivKey(priv);
+
+      // 2. Build client_pubkey = [0x00, ...x25519_pub]
+      const clientPubkey = buildClientPubkey(pub);
+
+      // 3. Submit redeem transaction
       await dAppKit.signAndExecuteTransaction({
-        transaction: buildRedeemTx({ tokenId, clientPubkey: pubkeyWithFlag }),
+        transaction: buildRedeemTx({ tokenId, clientPubkey }),
       });
       setRedeemState("waiting");
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Redemption failed");
       setRedeemState("error");
+    }
+  }
+
+  async function handleDecrypt() {
+    if (!account) return;
+    setDecryptError(null);
+    try {
+      const msg = signingMessage(tokenId);
+      const result = await dAppKit.signPersonalMessage({ message: msg });
+      const sigBytes = parseSuiSignature(result.signature);
+      const { priv } = deriveEcdhKey(sigBytes, tokenId);
+      const ct = new Uint8Array(deliveredKey!);
+      const plain = await eciesDecrypt(ct, priv);
+      setPlaintext(new TextDecoder().decode(plain));
+    } catch (e) {
+      setDecryptError(e instanceof Error ? e.message : "Decryption failed");
     }
   }
 
@@ -166,38 +184,47 @@ export function TokenCard({ tokenObject }: Props) {
             </button>
           )}
           {redeemState === "redeeming" && (
-            <p style={{ fontSize: 13, margin: 0 }}>Submitting redemption transaction…</p>
+            <p style={{ fontSize: 13, margin: 0 }}>Signing and submitting redemption…</p>
           )}
           {redeemState === "waiting" && (
             <p style={{ fontSize: 13, color: "#888", margin: 0 }}>
               ⏳ Waiting for service provider to deliver auth key…
             </p>
           )}
-          {redeemState === "delivered" && deliveredKey && (() => {
-            const hexKey = deliveredKey.map((b) => b.toString(16).padStart(2, "0")).join("");
-            return (
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
-                  <p style={{ color: "green", margin: 0, fontWeight: 600, fontSize: 13 }}>
-                    ✓ Auth key received (hex, encrypted for your public key)
+          {redeemState === "delivered" && deliveredKey && (
+            <div>
+              {plaintext != null ? (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
+                    <p style={{ color: "green", margin: 0, fontWeight: 600, fontSize: 13 }}>
+                      ✓ Preauthkey decrypted
+                    </p>
+                    <button
+                      onClick={async () => { await navigator.clipboard.writeText(plaintext); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                      style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem" }}
+                    >
+                      {copied ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                  <textarea
+                    readOnly value={plaintext} rows={2}
+                    style={{ width: "100%", fontFamily: "monospace", fontSize: 12, boxSizing: "border-box" }}
+                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                  />
+                </>
+              ) : (
+                <div>
+                  <p style={{ color: "green", margin: "0 0 0.5rem", fontWeight: 600, fontSize: 13 }}>
+                    ✓ Auth key received
                   </p>
-                  <button
-                    onClick={async () => { await navigator.clipboard.writeText(hexKey); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                    style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem", flexShrink: 0 }}
-                  >
-                    {copied ? "Copied!" : "Copy"}
+                  {decryptError && <p style={{ color: "red", fontSize: 12, margin: "0 0 0.5rem" }}>{decryptError}</p>}
+                  <button onClick={handleDecrypt} style={{ fontSize: 13, padding: "4px 12px" }}>
+                    Decrypt with wallet
                   </button>
                 </div>
-                <textarea
-                  readOnly
-                  value={hexKey}
-                  rows={3}
-                  style={{ width: "100%", fontFamily: "monospace", fontSize: 11, boxSizing: "border-box" }}
-                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                />
-              </div>
-            );
-          })()}
+              )}
+            </div>
+          )}
           {redeemState === "error" && (
             <div>
               <p style={{ color: "red", fontSize: 13, margin: "0 0 0.25rem" }}>Error: {errorMsg}</p>
