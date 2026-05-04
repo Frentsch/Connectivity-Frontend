@@ -63,24 +63,35 @@ export function buildCreateListingTx(params: {
  * that to the seller; the remainder stays in the gas coin.
  */
 export function buildPurchaseTx(params: {
-  listingId: string;
-  start: bigint;      // Unix seconds
-  end: bigint;        // Unix seconds
-  bandwidth: bigint;  // kB/s
+  listingId:    string;
+  start:        bigint;   // Unix seconds
+  end:          bigint;   // Unix seconds
+  bandwidth:    bigint;   // kB/s
+  maxPriceMist: bigint;   // buyer's price cap — tx aborts if listing price exceeds this
 }): Transaction {
   const tx = new Transaction();
+
+  // Split exactly maxPriceMist from the gas coin so the Move contract can only
+  // take up to that amount. If the listing price has risen above the cap the
+  // split coin won't cover it and the transaction aborts, protecting the buyer.
+  const [payment] = tx.splitCoins(tx.gas, [tx.pure.u64(params.maxPriceMist)]);
+
   tx.moveCall({
     target: `${PACKAGE_ID}::marketplace::purchase`,
     typeArguments: [SUI_COIN_TYPE],
     arguments: [
-      tx.object(MARKETPLACE_ID),           // &mut Marketplace<SUI>
-      tx.pure.address(params.listingId),   // listing_id: ID  (same BCS encoding as address)
-      tx.gas,                               // &mut Coin<SUI>
+      tx.object(MARKETPLACE_ID),
+      tx.pure.address(params.listingId),
+      payment,
       tx.pure.u64(params.start),
       tx.pure.u64(params.end),
       tx.pure.u64(params.bandwidth),
     ],
   });
+
+  // Merge any unspent change back into the gas coin (price < maxPrice case).
+  tx.mergeCoins(tx.gas, [payment]);
+
   return tx;
 }
 

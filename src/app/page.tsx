@@ -7,7 +7,13 @@ import { ListingCard } from "@/components/ListingCard";
 export default function BrowsePage() {
   const { data, isLoading, refetch } = useListings();
 
-  const listings = data ?? [];
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const listings = (data ?? []).filter((obj) => {
+    const fields = (obj.data?.content as any)?.fields ?? {};
+    const token  = fields.token?.fields ?? fields.token ?? {};
+    const expiresAt = Number(token.expires_at ?? 0);
+    return expiresAt === 0 || expiresAt > nowSecs;
+  });
 
   return (
     <div>

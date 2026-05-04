@@ -6,7 +6,11 @@ interface Props {
   objectId: string;
   fields: {
     issuer: string;
-    price_mist: string;
+    pricing_policy?: {
+      fields?: {
+        base_price_mist?: string;
+      };
+    };
     token?: {
       fields?: {
         service_name?: string;
@@ -19,8 +23,9 @@ interface Props {
 }
 
 export function ListingCard({ objectId, fields }: Props) {
-  const token = fields.token?.fields ?? {};
-  const priceSui = (Number(fields.price_mist) / 1e9).toFixed(4);
+  const token     = fields.token?.fields ?? {};
+  const baseMist  = Number(fields.pricing_policy?.fields?.base_price_mist ?? 0);
+  const priceSui  = (baseMist / 1e9).toFixed(4);
   const expiresAt = Number(token.expires_at ?? 0);
   const expiresStr = expiresAt === 0 ? "No expiry" : new Date(expiresAt * 1000).toLocaleDateString();
 
