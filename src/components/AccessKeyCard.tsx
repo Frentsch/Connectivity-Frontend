@@ -71,8 +71,11 @@ export function AccessKeyCard({ accessKeyObject }: Props) {
         <span style={{ color: "green", fontWeight: 600, fontSize: 13 }}>✓ Delivered</span>
       </div>
 
-      <p style={{ fontFamily: "monospace", fontSize: 11, color: "#999", marginTop: 4 }}>{keyId}</p>
-
+      <p style={{ fontFamily: "monospace", fontSize: 11, color: "#999", marginTop: 4,
+                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "wrap" }}
+         title={keyId}>
+        {keyId}
+      </p>
       <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "0.5rem" }}>
         <tbody>
           {fields.ip_address && (

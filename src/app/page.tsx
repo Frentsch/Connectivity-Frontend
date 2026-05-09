@@ -18,7 +18,7 @@ export default function BrowsePage() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 style={{ margin: 0 }}>Browse Services</h1>
+        <h1 style={{ margin: 0 }}>Browse Listings</h1>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <button onClick={() => refetch()} style={{ fontSize: 13 }}>↻ Refresh</button>
           <ConnectButton />
@@ -30,7 +30,7 @@ export default function BrowsePage() {
       {!isLoading && listings.length === 0 && (
         <p style={{ color: "#888" }}>
           No listings yet.{" "}
-          <a href="/sell">Create the first one.</a>
+          {/*<a href="/sell">Create the first one.</a>*/}
         </p>
       )}
 

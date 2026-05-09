@@ -1,6 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useToken } from "@/lib/queries";
 import { ConnectButton } from "@/components/ConnectButton";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
@@ -54,6 +55,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   const [copied, setCopied]             = useState(false);
 
   const account = useCurrentAccount();
+  const router  = useRouter();
 
   const { data: deliveryEvents } = useQuery({
     queryKey: ["deliveryEvents", EVENT_REDEMPTION_DELIVERY],
@@ -66,6 +68,29 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
     enabled: redeemState === "waiting",
     refetchInterval: redeemState === "waiting" ? 3000 : false,
   });
+
+  const { data: ownedAccessKeys } = useQuery({
+    queryKey: ["ownedAccessKeys", account?.address],
+    queryFn: () =>
+      dAppKit.getClient().getOwnedObjects({
+        owner: account?.address ?? "",
+        filter: { StructType: ACCESS_KEY_TYPE },
+        options: { showContent: true },
+      }),
+    enabled: redeemState === "delivered" && !!account?.address,
+    refetchInterval: 2000,
+  });
+
+  useEffect(() => {
+    if (redeemState !== "delivered" || !ownedAccessKeys?.data) return;
+    const key = ownedAccessKeys.data.find((o) => {
+      const fields = (o.data?.content as any)?.fields;
+      return fields?.token_id?.toLowerCase() === objectId.toLowerCase();
+    });
+    if (key?.data?.objectId) {
+      router.push(`/tokens/${key.data.objectId}`);
+    }
+  }, [ownedAccessKeys, redeemState, objectId, router]);
 
   // Watch for delivery event matching this token
   if (redeemState === "waiting" && deliveryEvents?.data) {
@@ -139,13 +164,14 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
 
       <table style={{ borderCollapse: "collapse", marginBottom: "1.5rem" }}>
         <tbody>
-          <Row label="Object ID"  value={objectId}            mono />
-          <Row label="Service"    value={fields.service_name} />
-          <Row label="Endpoint"   value={fields.ip_address}   />
-          <Row label="Valid from" value={fmtTime(fields.valid_from)} />
-          <Row label="Expires"    value={fmtTime(fields.expires_at)} />
-          <Row label="Bandwidth"  value={fields.bandwidth ? `${fields.bandwidth} kB/s` : "—"} />
-          <Row label="Issuer"     value={fields.issuer}        mono />
+          <Row label="Object ID"     value={objectId}            mono />
+          <Row label="Service"       value={fields.service_name} />
+          <Row label="Endpoint"      value={fields.ip_address}   />
+          <Row label="Login Server"  value={fields.login_server || "—"} />
+          <Row label="Valid from"    value={fmtTime(fields.valid_from)} />
+          <Row label="Expires"       value={fmtTime(fields.expires_at)} />
+          <Row label="Bandwidth"     value={fields.bandwidth ? `${fields.bandwidth} kB/s` : "—"} />
+          <Row label="Issuer"        value={fields.issuer}        mono />
         </tbody>
       </table>
 
@@ -163,6 +189,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
           {redeemState === "waiting" && (
             <p style={{ color: "#888" }}>⏳ Waiting for service provider to deliver auth key…</p>
           )}
+          {/*
           {redeemState === "delivered" && deliveredKey && (
             <div>
               {plaintext != null ? (
@@ -191,7 +218,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
                 </div>
               )}
             </div>
-          )}
+          )}*/}
           {redeemState === "error" && (
             <div>
               <p style={{ color: "red" }}>Error: {errorMsg}</p>
@@ -208,7 +235,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
 
 function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Record<string, unknown> }) {
   const f = fields as {
-    token_id: string; service_name: string; ip_address: string;
+    token_id: string; service_name: string; ip_address: string; login_server: string;
     valid_from: string; expires_at: string; bandwidth: string;
     issuer: string; auth_key: number[];
   };
@@ -216,7 +243,8 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
   const [plaintext, setPlaintext]       = useState<string | null>(null);
   const [decryptError, setDecryptError] = useState<string | null>(null);
   const [decrypting, setDecrypting]     = useState(false);
-  const [copied, setCopied]             = useState(false);
+  const [copied,    setCopied]          = useState(false);
+  const [copiedCmd, setCopiedCmd]       = useState(false);
 
   const account = useCurrentAccount();
 
@@ -252,14 +280,14 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
 
       <table style={{ borderCollapse: "collapse", marginBottom: "1.5rem" }}>
         <tbody>
-          <Row label="Object ID"  value={objectId}      mono />
-          <Row label="Token ID"   value={f.token_id}    mono />
-          <Row label="Service"    value={f.service_name} />
-          <Row label="Endpoint"   value={f.ip_address}  />
-          <Row label="Valid from" value={fmtTime(f.valid_from)} />
-          <Row label="Expires"    value={fmtTime(f.expires_at)} />
-          <Row label="Bandwidth"  value={f.bandwidth ? `${f.bandwidth} kB/s` : "—"} />
-          <Row label="Issuer"     value={f.issuer}      mono />
+          <Row label="Object ID"    value={objectId}           mono />
+          <Row label="Token ID"     value={f.token_id}         mono />
+          <Row label="Endpoint"     value={f.ip_address}       />
+          <Row label="Login Server" value={f.login_server || "—"} />
+          <Row label="Valid from"   value={fmtTime(f.valid_from)} />
+          <Row label="Expires"      value={fmtTime(f.expires_at)} />
+          <Row label="Bandwidth"    value={f.bandwidth ? `${f.bandwidth} kB/s` : "—"} />
+          <Row label="Issuer"       value={f.issuer}           mono />
         </tbody>
       </table>
 
@@ -299,6 +327,26 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
             )}
           </div>
         )}
+      </div>
+      <br></br>
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
+          <p style={{ margin: 0 }}>To unlock your scion access, run</p>
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(`tailscale up --login-server ${f.login_server} --accept-routes --authkey ${plaintext ?? "DECRYPTED_KEY"}`);
+              setCopiedCmd(true);
+              setTimeout(() => setCopiedCmd(false), 2000);
+            }}
+            style={{ fontSize: 12, padding: "2px 10px", cursor: "pointer", marginLeft: "0.5rem" }}
+          >
+            {copiedCmd ? "Copied!" : "Copy"}
+          </button>
+        </div>
+        <textarea readOnly value={`tailscale up --login-server ${f.login_server} --accept-routes --authkey ${plaintext ?? "DECRYPTED_KEY"}`} rows={2}
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 14, boxSizing: "border-box" }}
+              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            />
       </div>
     </div>
   );

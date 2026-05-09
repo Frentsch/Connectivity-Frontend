@@ -14,8 +14,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ClientProviders>
           <header style={{ padding: "1rem 2rem", borderBottom: "1px solid #eee", display: "flex", gap: "1.5rem", alignItems: "center" }}>
             <strong style={{ marginRight: "auto" }}>SUI Marketplace</strong>
-            <a href="/">Browse</a>
+            <a href="/">Buy</a>
             <a href="/sell">Sell</a>
+            <a href="/my-listings">My Listings</a>
             <a href="/tokens">My Tokens</a>
           </header>
           <main style={{ padding: "2rem" }}>{children}</main>

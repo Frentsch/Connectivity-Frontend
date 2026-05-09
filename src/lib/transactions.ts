@@ -8,6 +8,7 @@ import { PACKAGE_ID, MARKETPLACE_ID, SUI_COIN_TYPE } from "./constants";
 export function buildCreateAccessTokenTx(params: {
   name: string;
   ipAddress: string;
+  loginServer: string;
   validFrom: bigint;  // Unix seconds; 0 = now
   expiresAt: bigint;  // Unix seconds
   maxBandwidth: bigint; // kB/s
@@ -18,6 +19,7 @@ export function buildCreateAccessTokenTx(params: {
     arguments: [
       tx.pure.vector("u8", Array.from(new TextEncoder().encode(params.name))),
       tx.pure.vector("u8", Array.from(new TextEncoder().encode(params.ipAddress))),
+      tx.pure.vector("u8", Array.from(new TextEncoder().encode(params.loginServer))),
       tx.pure.u64(params.validFrom),
       tx.pure.u64(params.expiresAt),
       tx.pure.u64(params.maxBandwidth),
@@ -33,6 +35,7 @@ export function buildCreateAccessTokenTx(params: {
 export function buildCreateListingTx(params: {
   tokenId: string;
   priceMist: bigint;
+  minPriceMist: bigint;
   minBandwidth: bigint;
   minDuration: bigint;
   bwGranularity: bigint;
@@ -46,12 +49,60 @@ export function buildCreateListingTx(params: {
       tx.object(MARKETPLACE_ID),
       tx.object(params.tokenId),
       tx.pure.u64(params.priceMist),
+      tx.pure.u64(params.minPriceMist),
       tx.pure.u64(params.minBandwidth),
       tx.pure.u64(params.minDuration),
       tx.pure.u64(params.bwGranularity),
       tx.pure.u64(params.timeGranularity),
     ],
   });
+  return tx;
+}
+
+export function buildCreateAndListTx(params: {
+  name: string;
+  ipAddress: string;
+  loginServer: string;
+  validFrom: bigint;
+  expiresAt: bigint;
+  maxBandwidth: bigint;
+  priceMist: bigint;
+  minPriceMist: bigint;
+  minBandwidth: bigint;
+  minDuration: bigint;
+  bwGranularity: bigint;
+  timeGranularity: bigint;
+}): Transaction {
+  const tx = new Transaction();
+  const enc = (s: string) => Array.from(new TextEncoder().encode(s));
+
+  const [token] = tx.moveCall({
+    target: `${PACKAGE_ID}::access_token::create_access_token_obj`,
+    arguments: [
+      tx.pure.vector("u8", enc(params.name)),
+      tx.pure.vector("u8", enc(params.ipAddress)),
+      tx.pure.vector("u8", enc(params.loginServer)),
+      tx.pure.u64(params.validFrom),
+      tx.pure.u64(params.expiresAt),
+      tx.pure.u64(params.maxBandwidth),
+    ],
+  });
+
+  tx.moveCall({
+    target: `${PACKAGE_ID}::marketplace::create_listing`,
+    typeArguments: [SUI_COIN_TYPE],
+    arguments: [
+      tx.object(MARKETPLACE_ID),
+      token,
+      tx.pure.u64(params.priceMist),
+      tx.pure.u64(params.minPriceMist),
+      tx.pure.u64(params.minBandwidth),
+      tx.pure.u64(params.minDuration),
+      tx.pure.u64(params.bwGranularity),
+      tx.pure.u64(params.timeGranularity),
+    ],
+  });
+
   return tx;
 }
 
@@ -110,6 +161,19 @@ export function buildRedeemTx(params: {
     arguments: [
       tx.object(params.tokenId),
       tx.pure.vector("u8", Array.from(params.clientPubkey)),
+    ],
+  });
+  return tx;
+}
+
+export function buildDelistTx(listingId: string): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${PACKAGE_ID}::marketplace::delist`,
+    typeArguments: [SUI_COIN_TYPE],
+    arguments: [
+      tx.object(MARKETPLACE_ID),
+      tx.pure.address(listingId),
     ],
   });
   return tx;

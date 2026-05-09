@@ -86,6 +86,16 @@ export function useMyAccessKeys() {
   });
 }
 
+export function useMyListings() {
+  const account = useCurrentAccount();
+  const query   = useListings();
+  const myListings = (query.data ?? []).filter((obj) => {
+    const issuer = (obj.data?.content as any)?.fields?.issuer as string | undefined;
+    return issuer?.toLowerCase() === account?.address?.toLowerCase();
+  });
+  return { ...query, data: myListings };
+}
+
 export function useToken(tokenId: string) {
   return useQuery({
     queryKey: ["getObject", tokenId],

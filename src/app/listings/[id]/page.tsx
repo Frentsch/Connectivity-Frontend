@@ -35,7 +35,7 @@ function validate(
   const errs: string[] = [];
   const warnings: string[] = [];
   if (maxPrice < c.priceEstimate)
-    warnings.push(`Max price (${maxPrice} SUI) is below the estimated price (${(Number(c.priceEstimate) / 1e9).toFixed(9)} SUI) — transaction will likely fail`);
+    warnings.push(`Max price (${(Number(maxPrice)/1e9).toFixed(9)} SUI) is below the estimated price (${(Number(c.priceEstimate) / 1e9).toFixed(9)} SUI) — transaction will likely fail`);
 
   if (validFromSecs < c.minValidFrom)
     errs.push(`Start cannot be before listing valid_from (${new Date(c.minValidFrom * 1000).toLocaleString()})`);
@@ -158,10 +158,6 @@ function PurchaseForm({ listingId, tokenId, policy, token, fields }: FormProps) 
     setInputMaxPrice((Number(estimatedPrice) / 1e9).toFixed(9));
   }, [estimatedPrice]);
 
-  const priceWarning: string[] = [];
-  if (maxPriceMist < effectiveEstimate)
-    priceWarning.push(`Max price (${inputMaxPrice} SUI) is below the estimated price (${(Number(effectiveEstimate) / 1e9).toFixed(9)} SUI) — transaction will fail`);
-
   const errors = validate(curFromSecs, curToSecs, bwVal, maxPriceMist, {
     minValidFrom: Number(validFrom),
     maxExpiresAt: Number(expiresAt),
@@ -177,16 +173,21 @@ function PurchaseForm({ listingId, tokenId, policy, token, fields }: FormProps) 
         <tbody>
           {[
             ["Endpoint",     token.ip_address ?? "—"],
-            ["Price",        `${priceSui} SUI`],
+            ["Full Price",        `${defaultEstimateSui} SUI`],
             ["Max valid from", token.valid_from ? new Date(Number(token.valid_from) * 1000).toLocaleString() : "—"],
             ["Max expires",  expiresAt === 0n ? "Never" : new Date(Number(expiresAt) * 1000).toLocaleString()],
+            ["Min duration", `${minDuration} s`],
+            ["Time step",    timeGran > 0 ? `${timeGran} s` : "—"],
             ["Max bandwidth",maxBw > 0 ? `${maxBw} kB/s` : "—"],
             ["Min bandwidth",`${minBw} kB/s`],
-            ["Min duration", `${minDuration} s`],
             ["BW step",      bwGran > 0 ? `${bwGran} kB/s` : "—"],
-            ["Time step",    timeGran > 0 ? `${timeGran} s` : "—"],
             ["Seller",       fields.issuer as string],
-            ["Pricing", `${(Number(defaultEstimate) / 1e9).toFixed(4)} SUI${policy.bw_tiers.length > 0 || policy.dur_tiers.length > 0 ? " (volume discount)" : ""}`],
+            /*
+            ["Pricing", [
+              `${(Number(defaultEstimate) / 1e9).toFixed(4)} SUI`,
+              policy.min_price > 0 ? `min ${(policy.min_price / 1e9).toFixed(4)} SUI` : "",
+              policy.bw_tiers.length > 0 || policy.dur_tiers.length > 0 ? "volume discount" : "",
+            ].filter(Boolean).join(" · ")],*/
           ].map(([label, value]) => (
             <tr key={String(label)} style={{ borderBottom: "1px solid #eee" }}>
               <td style={{ padding: "0.5rem 1rem 0.5rem 0", color: "#666", whiteSpace: "nowrap", fontSize: 14 }}>

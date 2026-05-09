@@ -20,9 +20,10 @@ interface Props {
       };
     };
   };
+  manageHref?: string;
 }
 
-export function ListingCard({ objectId, fields }: Props) {
+export function ListingCard({ objectId, fields, manageHref }: Props) {
   const token     = fields.token?.fields ?? {};
   const baseMist  = Number(fields.pricing_policy?.fields?.base_price_mist ?? 0);
   const priceSui  = (baseMist / 1e9).toFixed(4);
@@ -43,8 +44,10 @@ export function ListingCard({ objectId, fields }: Props) {
       <p style={{ margin: "0.25rem 0", fontFamily: "monospace", fontSize: 11, color: "#bbb" }}>
         {fields.issuer.slice(0, 10)}…
       </p>
-      <Link href={`/listings/${objectId}`}>
-        <button style={{ marginTop: "0.75rem", width: "100%" }}>View &amp; Buy</button>
+      <Link href={manageHref ?? `/listings/${objectId}`}>
+        <button style={{ marginTop: "0.75rem", width: "100%" }}>
+          {manageHref ? "Manage" : "View & Buy"}
+        </button>
       </Link>
     </div>
   );

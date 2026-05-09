@@ -132,7 +132,9 @@ export function TokenCard({ tokenObject }: Props) {
         <span style={{ color: statusColor, fontWeight: 600, fontSize: 13 }}>{statusText}</span>
       </div>
 
-      <p style={{ fontFamily: "monospace", fontSize: 11, color: "#999", marginTop: 4 }}>
+      <p style={{ fontFamily: "monospace", fontSize: 11, color: "#999", marginTop: 4,
+                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "wrap" }}
+         title={tokenId}>
         {tokenId}
       </p>
 
