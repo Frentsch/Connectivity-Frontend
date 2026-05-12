@@ -9,7 +9,8 @@ import { useQuery } from "@tanstack/react-query";
 import { dAppKit } from "@/lib/dappkit";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY, TOKEN_TYPE, ACCESS_KEY_TYPE } from "@/lib/constants";
-import { signingMessage, parseSuiSignature, deriveEcdhKey, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
+import { ecdhKeypairFromSecret, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
+import { useMasterSecret } from "@/lib/hooks";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -54,8 +55,9 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   const [errorMsg, setErrorMsg]         = useState<string | null>(null);
   const [copied, setCopied]             = useState(false);
 
-  const account = useCurrentAccount();
-  const router  = useRouter();
+  const account                        = useCurrentAccount();
+  const router                         = useRouter();
+  const { getMasterSecret, publicKey } = useMasterSecret();
 
   const { data: deliveryEvents } = useQuery({
     queryKey: ["deliveryEvents", EVENT_REDEMPTION_DELIVERY],
@@ -84,8 +86,8 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   useEffect(() => {
     if (redeemState !== "delivered" || !ownedAccessKeys?.data) return;
     const key = ownedAccessKeys.data.find((o) => {
-      const fields = (o.data?.content as any)?.fields;
-      return fields?.token_id?.toLowerCase() === objectId.toLowerCase();
+      const f = (o.data?.content as any)?.fields;
+      return f?.token_id?.toLowerCase() === objectId.toLowerCase();
     });
     if (key?.data?.objectId) {
       router.push(`/tokens/${key.data.objectId}`);
@@ -118,11 +120,12 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
     setRedeemState("redeeming");
 
     try {
-      const msg = signingMessage(objectId);
-      const result = await dAppKit.signPersonalMessage({ message: msg });
-      const sigBytes = parseSuiSignature(result.signature);
-      const { priv, pub } = deriveEcdhKey(sigBytes, objectId);
-      setPrivKey(priv);
+      // Use the public key stored on-chain — no Seal round-trip needed.
+      // Fall back to deriving it if UserSecret isn't registered yet.
+      const pub = publicKey ?? ecdhKeypairFromSecret(await getMasterSecret()).pub;
+      // Cache the private key for auto-decrypt when the delivery arrives.
+      const masterSecret = await getMasterSecret();
+      setPrivKey(ecdhKeypairFromSecret(masterSecret).priv);
 
       const clientPubkey = buildClientPubkey(pub);
       await dAppKit.signAndExecuteTransaction({
@@ -139,10 +142,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
     if (!account || !deliveredKey) return;
     setDecryptError(null);
     try {
-      const msg = signingMessage(objectId);
-      const result = await dAppKit.signPersonalMessage({ message: msg });
-      const sigBytes = parseSuiSignature(result.signature);
-      const { priv } = deriveEcdhKey(sigBytes, objectId);
+      const { priv } = ecdhKeypairFromSecret(await getMasterSecret());
       const plain = await eciesDecrypt(new Uint8Array(deliveredKey), priv);
       setPlaintext(new TextDecoder().decode(plain));
     } catch (e) {
@@ -185,7 +185,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
               Redeem Token
             </button>
           )}
-          {redeemState === "redeeming" && <p>Signing and submitting redemption…</p>}
+          {redeemState === "redeeming" && <p>Preparing redemption…</p>}
           {redeemState === "waiting" && (
             <p style={{ color: "#888" }}>⏳ Waiting for service provider to deliver auth key…</p>
           )}
@@ -246,18 +246,15 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
   const [copied,    setCopied]          = useState(false);
   const [copiedCmd, setCopiedCmd]       = useState(false);
 
-  const account = useCurrentAccount();
+  const account             = useCurrentAccount();
+  const { getMasterSecret } = useMasterSecret();
 
   async function handleDecrypt() {
     if (!account) return;
     setDecryptError(null);
     setDecrypting(true);
     try {
-      // The signing message uses the original token_id, not the AccessKey object ID
-      const msg = signingMessage(f.token_id);
-      const result = await dAppKit.signPersonalMessage({ message: msg });
-      const sigBytes = parseSuiSignature(result.signature);
-      const { priv } = deriveEcdhKey(sigBytes, f.token_id);
+      const { priv } = ecdhKeypairFromSecret(await getMasterSecret());
       const ct = new Uint8Array(f.auth_key ?? []);
       const plain = await eciesDecrypt(ct, priv);
       setPlaintext(new TextDecoder().decode(plain));
@@ -311,7 +308,7 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
         ) : (
           <div>
             <p style={{ margin: "0 0 0.75rem", color: "#555", fontSize: 14 }}>
-              Sign with your wallet to decrypt the auth key for this service.
+              Decrypt the auth key for this service.
             </p>
             {decryptError && <p style={{ color: "red", fontSize: 13, margin: "0 0 0.5rem" }}>{decryptError}</p>}
             {!account ? (
@@ -322,13 +319,13 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
                 disabled={decrypting}
                 style={{ padding: "0.5rem 1.5rem", fontSize: "0.9rem", opacity: decrypting ? 0.6 : 1 }}
               >
-                {decrypting ? "Decrypting…" : "Decrypt with wallet"}
+                {decrypting ? "Decrypting…" : "Decrypt"}
               </button>
             )}
           </div>
         )}
       </div>
-      <br></br>
+      <br />
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.25rem" }}>
           <p style={{ margin: 0 }}>To unlock your scion access, run</p>
@@ -344,9 +341,9 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
           </button>
         </div>
         <textarea readOnly value={`tailscale up --login-server ${f.login_server} --accept-routes --authkey ${plaintext ?? "DECRYPTED_KEY"}`} rows={2}
-              style={{ width: "100%", fontFamily: "monospace", fontSize: 14, boxSizing: "border-box" }}
-              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-            />
+          style={{ width: "100%", fontFamily: "monospace", fontSize: 14, boxSizing: "border-box" }}
+          onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+        />
       </div>
     </div>
   );

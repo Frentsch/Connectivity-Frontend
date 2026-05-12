@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
-import { dAppKit } from "@/lib/dappkit";
-import { signingMessage, parseSuiSignature, deriveEcdhKey, eciesDecrypt } from "@/lib/crypto";
+import { ecdhKeypairFromSecret, eciesDecrypt } from "@/lib/crypto";
+import { useMasterSecret } from "@/lib/hooks";
 
 interface Props {
   accessKeyObject: {
@@ -43,18 +43,16 @@ export function AccessKeyCard({ accessKeyObject }: Props) {
   const [decrypting, setDecrypting]     = useState(false);
   const [copied, setCopied]             = useState(false);
 
-  const account = useCurrentAccount();
+  const account             = useCurrentAccount();
+  const { getMasterSecret } = useMasterSecret();
 
   async function handleDecrypt() {
     if (!account || !fields) return;
     setDecryptError(null);
     setDecrypting(true);
     try {
-      // Sign using the original token_id so the key matches what was used at redeem time
-      const msg = signingMessage(fields.token_id);
-      const result = await dAppKit.signPersonalMessage({ message: msg });
-      const sigBytes = parseSuiSignature(result.signature);
-      const { priv } = deriveEcdhKey(sigBytes, fields.token_id);
+      const masterSecret = await getMasterSecret();
+      const { priv } = ecdhKeypairFromSecret(masterSecret);
       const plain = await eciesDecrypt(new Uint8Array(fields.auth_key ?? []), priv);
       setPlaintext(new TextDecoder().decode(plain));
     } catch (e) {

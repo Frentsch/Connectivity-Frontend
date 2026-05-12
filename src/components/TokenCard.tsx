@@ -7,7 +7,8 @@ import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { dAppKit } from "@/lib/dappkit";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY } from "@/lib/constants";
-import { signingMessage, parseSuiSignature, deriveEcdhKey, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
+import { ecdhKeypairFromSecret, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
+import { useMasterSecret } from "@/lib/hooks";
 
 interface RedemptionDeliveryParsed {
   token_id: string;
@@ -43,7 +44,8 @@ export function TokenCard({ tokenObject }: Props) {
   const [errorMsg, setErrorMsg]       = useState<string | null>(null);
   const [copied, setCopied]           = useState(false);
 
-  const account = useCurrentAccount();
+  const account                         = useCurrentAccount();
+  const { getMasterSecret, publicKey }  = useMasterSecret();
 
   const { data: deliveryEvents } = useQuery({
     queryKey: ["deliveryEvents", EVENT_REDEMPTION_DELIVERY],
@@ -85,17 +87,20 @@ export function TokenCard({ tokenObject }: Props) {
     setRedeemState("redeeming");
 
     try {
-      // 1. Sign deterministic message → derive X25519 keypair
-      const msg = signingMessage(tokenId);
-      const result = await dAppKit.signPersonalMessage({ message: msg });
-      const sigBytes = parseSuiSignature(result.signature);
-      const { priv, pub } = deriveEcdhKey(sigBytes, tokenId);
-      setPrivKey(priv);
+      // publicKey is read directly from UserSecret on-chain — no Seal round-trip.
+      // If not yet registered, fall back to decrypting the master secret.
+      let pub: Uint8Array;
+      if (publicKey) {
+        pub = publicKey;
+      } else {
+        const masterSecret = await getMasterSecret();
+        pub = ecdhKeypairFromSecret(masterSecret).pub;
+      }
+      // Keep priv in state for auto-decrypt when the delivery arrives
+      const masterSecret = await getMasterSecret();
+      setPrivKey(ecdhKeypairFromSecret(masterSecret).priv);
 
-      // 2. Build client_pubkey = [0x00, ...x25519_pub]
       const clientPubkey = buildClientPubkey(pub);
-
-      // 3. Submit redeem transaction
       await dAppKit.signAndExecuteTransaction({
         transaction: buildRedeemTx({ tokenId, clientPubkey }),
       });
@@ -110,12 +115,9 @@ export function TokenCard({ tokenObject }: Props) {
     if (!account) return;
     setDecryptError(null);
     try {
-      const msg = signingMessage(tokenId);
-      const result = await dAppKit.signPersonalMessage({ message: msg });
-      const sigBytes = parseSuiSignature(result.signature);
-      const { priv } = deriveEcdhKey(sigBytes, tokenId);
-      const ct = new Uint8Array(deliveredKey!);
-      const plain = await eciesDecrypt(ct, priv);
+      const masterSecret = await getMasterSecret();
+      const { priv } = ecdhKeypairFromSecret(masterSecret);
+      const plain = await eciesDecrypt(new Uint8Array(deliveredKey!), priv);
       setPlaintext(new TextDecoder().decode(plain));
     } catch (e) {
       setDecryptError(e instanceof Error ? e.message : "Decryption failed");

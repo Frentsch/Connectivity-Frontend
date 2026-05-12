@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { dAppKit } from "./dappkit";
-import { TOKEN_TYPE, ACCESS_KEY_TYPE, MARKETPLACE_ID } from "./constants";
+import { TOKEN_TYPE, ACCESS_KEY_TYPE, MARKETPLACE_ID, USER_SECRET_TYPE } from "./constants";
 
 /**
  * Returns the set of AccessToken object IDs currently owned by `address`.
@@ -94,6 +94,34 @@ export function useMyListings() {
     return issuer?.toLowerCase() === account?.address?.toLowerCase();
   });
   return { ...query, data: myListings };
+}
+
+/**
+ * Finds the UserSecret object owned by `address` and returns the
+ * encrypted_secret bytes, or null if none exists yet (first-time setup needed).
+ */
+export function useUserSecret(address?: string) {
+  return useQuery({
+    queryKey: ["userSecret", address],
+    enabled:  !!address,
+    queryFn:  async () => {
+      const result = await dAppKit.getClient().getOwnedObjects({
+        owner:   address!,
+        filter:  { StructType: USER_SECRET_TYPE },
+        options: { showContent: true },
+      });
+      if (!result.data.length) return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fields = (result.data[0].data?.content as any)?.fields;
+      const rawPub = fields?.public_key       as number[] | undefined;
+      const rawEnc = fields?.encrypted_secret as number[] | undefined;
+      if (!rawPub || !rawEnc) return null;
+      return {
+        publicKey:       new Uint8Array(rawPub),
+        encryptedSecret: new Uint8Array(rawEnc),
+      };
+    },
+  });
 }
 
 export function useToken(tokenId: string) {
