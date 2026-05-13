@@ -15,6 +15,12 @@ export const ACCESS_KEY_TYPE = `${PACKAGE_ID}::access_token::AccessKey`;
 // Events emitted by the contract
 export const EVENT_LISTING_CREATED       = `${PACKAGE_ID}::marketplace::ListingCreated`;
 export const EVENT_REDEMPTION_DELIVERY   = `${PACKAGE_ID}::access_token::RedemptionDelivery`;
+export const EVENT_PURCHASE_COMPLETED    = `${PACKAGE_ID}::marketplace::PurchaseCompleted`;
+
+// Escrow status values (mirror escrow.move constants)
+export const ESCROW_STATUS_PURCHASED = 0;
+export const ESCROW_STATUS_REDEEMED  = 1;
+export const ESCROW_STATUS_DELIVERED = 2;
 
 // Active network — override with NEXT_PUBLIC_NETWORK=mainnet in production
 export const DEFAULT_NETWORK =

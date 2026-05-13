@@ -147,18 +147,20 @@ export function buildPurchaseTx(params: {
 }
 
 /**
- * Build a PTB that calls access_token::redeem.
- * Passes the wallet's public key (flag_byte || raw_pubkey_bytes) so the
- * service provider can encrypt the auth key back to this wallet.
+ * Build a PTB that calls marketplace::redeem.
+ * `escrowId` is the shared Escrow object created at purchase time.
  */
 export function buildRedeemTx(params: {
-  tokenId: string;
-  clientPubkey: Uint8Array; // [scheme_flag, ...raw_pubkey_bytes]
+  escrowId:     string;
+  tokenId:      string;
+  clientPubkey: Uint8Array;
 }): Transaction {
   const tx = new Transaction();
   tx.moveCall({
-    target: `${PACKAGE_ID}::access_token::redeem`,
+    target:        `${PACKAGE_ID}::marketplace::redeem`,
+    typeArguments: [SUI_COIN_TYPE],
     arguments: [
+      tx.object(params.escrowId),
       tx.object(params.tokenId),
       tx.pure.vector("u8", Array.from(params.clientPubkey)),
     ],
@@ -178,6 +180,28 @@ export function buildRegisterSecretTx(publicKey: Uint8Array, encryptedSecret: Ui
       tx.pure.vector("u8", Array.from(publicKey)),
       tx.pure.vector("u8", Array.from(encryptedSecret)),
     ],
+  });
+  return tx;
+}
+
+/** Seller claims payment from a delivered (or expired unpurchased) escrow. */
+export function buildClaimPaymentTx(escrowId: string): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target:        `${PACKAGE_ID}::escrow::claim_payment`,
+    typeArguments: [SUI_COIN_TYPE],
+    arguments:     [tx.object(escrowId), tx.object("0x6")],
+  });
+  return tx;
+}
+
+/** Buyer claims a refund from an expired unredeemed-delivery escrow. */
+export function buildClaimRefundTx(escrowId: string): Transaction {
+  const tx = new Transaction();
+  tx.moveCall({
+    target:        `${PACKAGE_ID}::escrow::claim_refund`,
+    typeArguments: [SUI_COIN_TYPE],
+    arguments:     [tx.object(escrowId), tx.object("0x6")],
   });
   return tx;
 }

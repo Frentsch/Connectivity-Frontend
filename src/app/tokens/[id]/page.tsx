@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useToken } from "@/lib/queries";
+import { useToken, useEscrowForToken } from "@/lib/queries";
 import { ConnectButton } from "@/components/ConnectButton";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useQuery } from "@tanstack/react-query";
@@ -58,6 +58,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   const account                        = useCurrentAccount();
   const router                         = useRouter();
   const { getMasterSecret, publicKey } = useMasterSecret();
+  const { data: escrowId }             = useEscrowForToken(objectId);
 
   const { data: deliveryEvents } = useQuery({
     queryKey: ["deliveryEvents", EVENT_REDEMPTION_DELIVERY],
@@ -127,9 +128,10 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
       const masterSecret = await getMasterSecret();
       setPrivKey(ecdhKeypairFromSecret(masterSecret).priv);
 
+      if (!escrowId) throw new Error("Escrow not found for this token");
       const clientPubkey = buildClientPubkey(pub);
       await dAppKit.signAndExecuteTransaction({
-        transaction: buildRedeemTx({ tokenId: objectId, clientPubkey }),
+        transaction: buildRedeemTx({ escrowId, tokenId: objectId, clientPubkey }),
       });
       setRedeemState("waiting");
     } catch (e) {

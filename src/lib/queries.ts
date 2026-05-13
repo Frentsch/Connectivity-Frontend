@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { dAppKit } from "./dappkit";
-import { TOKEN_TYPE, ACCESS_KEY_TYPE, MARKETPLACE_ID, USER_SECRET_TYPE } from "./constants";
+import { TOKEN_TYPE, ACCESS_KEY_TYPE, MARKETPLACE_ID, USER_SECRET_TYPE, PACKAGE_ID, EVENT_PURCHASE_COMPLETED } from "./constants";
 
 /**
  * Returns the set of AccessToken object IDs currently owned by `address`.
@@ -120,6 +120,92 @@ export function useUserSecret(address?: string) {
         publicKey:       new Uint8Array(rawPub),
         encryptedSecret: new Uint8Array(rawEnc),
       };
+    },
+  });
+}
+
+export interface EscrowEntry {
+  escrowId:  string;
+  tokenId:   string;
+  buyer:     string;
+  seller:    string;
+  amount:    number;  // MIST
+  status:    number;  // 0=purchased 1=redeemed 2=delivered
+  expiresAt: number;  // Unix seconds
+}
+
+type PurchaseEvent = { token_id: string; escrow_id: string; buyer: string; seller: string; amount: string };
+
+async function fetchEscrowEntries(filterKey: "buyer" | "seller", address: string): Promise<EscrowEntry[]> {
+  const events = await dAppKit.getClient().queryEvents({
+    query: { MoveEventType: EVENT_PURCHASE_COMPLETED },
+    limit: 100,
+    order: "descending",
+  });
+  const myEvents = events.data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((e) => e.parsedJson as PurchaseEvent)
+    .filter((p) => p[filterKey].toLowerCase() === address.toLowerCase());
+  if (!myEvents.length) return [];
+  const objects = await dAppKit.getClient().multiGetObjects({
+    ids: myEvents.map((p) => p.escrow_id),
+    options: { showContent: true },
+  });
+  return myEvents.flatMap((ev, i) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fields = (objects[i]?.data?.content as any)?.fields;
+    if (!fields) return [];  // escrow already claimed / deleted
+    return [{
+      escrowId:  ev.escrow_id,
+      tokenId:   ev.token_id,
+      buyer:     ev.buyer,
+      seller:    ev.seller,
+      amount:    Number(ev.amount),
+      status:    Number(fields.status),
+      expiresAt: Number(fields.expires_at),
+    }];
+  });
+}
+
+/** Escrows where the current user is the seller (for My Listings). */
+export function useMySellerEscrows() {
+  const account = useCurrentAccount();
+  return useQuery<EscrowEntry[]>({
+    queryKey: ["sellerEscrows", account?.address],
+    enabled:  !!account?.address,
+    queryFn:  () => fetchEscrowEntries("seller", account!.address),
+  });
+}
+
+/** Escrows where the current user is the buyer (for My Tokens). */
+export function useMyBuyerEscrows() {
+  const account = useCurrentAccount();
+  return useQuery<EscrowEntry[]>({
+    queryKey: ["buyerEscrows", account?.address],
+    enabled:  !!account?.address,
+    queryFn:  () => fetchEscrowEntries("buyer", account!.address),
+  });
+}
+
+/**
+ * Finds the escrow_id for a given token by querying PurchaseCompleted events.
+ * Returns null while loading or if no matching event is found.
+ */
+export function useEscrowForToken(tokenId?: string) {
+  return useQuery({
+    queryKey: ["escrowForToken", tokenId],
+    enabled:  !!tokenId,
+    queryFn:  async () => {
+      const eventType = `${PACKAGE_ID}::marketplace::PurchaseCompleted`;
+      const result = await dAppKit.getClient().queryEvents({
+        query: { MoveEventType: eventType },
+        limit: 50,
+        order: "descending",
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const match = result.data.find((e) => (e.parsedJson as any)?.token_id === tokenId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return match ? ((match.parsedJson as any).escrow_id as string) : null;
     },
   });
 }

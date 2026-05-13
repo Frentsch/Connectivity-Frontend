@@ -9,6 +9,7 @@ import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY } from "@/lib/constants";
 import { ecdhKeypairFromSecret, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
 import { useMasterSecret } from "@/lib/hooks";
+import { useEscrowForToken } from "@/lib/queries";
 
 interface RedemptionDeliveryParsed {
   token_id: string;
@@ -46,6 +47,7 @@ export function TokenCard({ tokenObject }: Props) {
 
   const account                         = useCurrentAccount();
   const { getMasterSecret, publicKey }  = useMasterSecret();
+  const { data: escrowId }              = useEscrowForToken(tokenId);
 
   const { data: deliveryEvents } = useQuery({
     queryKey: ["deliveryEvents", EVENT_REDEMPTION_DELIVERY],
@@ -100,9 +102,10 @@ export function TokenCard({ tokenObject }: Props) {
       const masterSecret = await getMasterSecret();
       setPrivKey(ecdhKeypairFromSecret(masterSecret).priv);
 
+      if (!escrowId) throw new Error("Escrow not found for this token");
       const clientPubkey = buildClientPubkey(pub);
       await dAppKit.signAndExecuteTransaction({
-        transaction: buildRedeemTx({ tokenId, clientPubkey }),
+        transaction: buildRedeemTx({ escrowId, tokenId, clientPubkey }),
       });
       setRedeemState("waiting");
     } catch (e) {
