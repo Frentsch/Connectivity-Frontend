@@ -121,7 +121,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
     setRedeemState("redeeming");
 
     try {
-      // Use the public key stored on-chain — no Seal round-trip needed.
+      // Use the public key stored on Seal.
       // Fall back to deriving it if UserSecret isn't registered yet.
       const pub = publicKey ?? ecdhKeypairFromSecret(await getMasterSecret()).pub;
       // Cache the private key for auto-decrypt when the delivery arrives.

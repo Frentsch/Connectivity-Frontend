@@ -4,6 +4,7 @@ import { use, useState, useEffect } from "react";
 import { ConnectButton } from "@/components/ConnectButton";
 import { useListing } from "@/lib/queries";
 import { BuyButton } from "@/components/BuyButton";
+import { BuyAndRedeemButton } from "@/components/BuyAndRedeemButton";
 import { warn } from "console";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -288,16 +289,27 @@ function PurchaseForm({ listingId, tokenId, policy, token, fields }: FormProps) 
         )}
       </div>
 
-      <BuyButton
-        listingId={listingId}
-        tokenId={tokenId}
-        priceMist={priceMist}
-        maxPriceMist={maxPriceMist}
-        validFrom={BigInt(curFromSecs)}
-        expiresAt={BigInt(curToSecs)}
-        bandwidth={BigInt(bwVal)}
-        disabled={errors[1].length > 0}
-      />
+      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+        <BuyButton
+          listingId={listingId}
+          tokenId={tokenId}
+          priceMist={priceMist}
+          maxPriceMist={maxPriceMist}
+          validFrom={BigInt(curFromSecs)}
+          expiresAt={BigInt(curToSecs)}
+          bandwidth={BigInt(bwVal)}
+          disabled={errors[1].length > 0}
+        />
+        <BuyAndRedeemButton
+          listingId={listingId}
+          tokenId={tokenId}
+          maxPriceMist={maxPriceMist}
+          validFrom={BigInt(curFromSecs)}
+          expiresAt={BigInt(curToSecs)}
+          bandwidth={BigInt(bwVal)}
+          disabled={errors[1].length > 0}
+        />
+      </div>
     </>
   );
 }

@@ -147,6 +147,51 @@ export function buildPurchaseTx(params: {
 }
 
 /**
+ * Build a PTB that purchases and redeems in one transaction by chaining
+ * marketplace::purchase_token → marketplace::redeem_and_share.
+ * The PTB pipes the AccessToken and Escrow results between the two calls,
+ * so no separate buy + redeem wallet prompts are needed.
+ */
+export function buildPurchaseAndRedeemTx(params: {
+  listingId:    string;
+  start:        bigint;
+  end:          bigint;
+  bandwidth:    bigint;
+  maxPriceMist: bigint;
+  clientPubkey: Uint8Array;
+}): Transaction {
+  const tx = new Transaction();
+  const [payment] = tx.splitCoins(tx.gas, [tx.pure.u64(params.maxPriceMist)]);
+
+  const [token, escrow] = tx.moveCall({
+    target:        `${PACKAGE_ID}::marketplace::purchase_token`,
+    typeArguments: [SUI_COIN_TYPE],
+    arguments: [
+      tx.object(MARKETPLACE_ID),
+      tx.pure.address(params.listingId),
+      payment,
+      tx.pure.u64(params.start),
+      tx.pure.u64(params.end),
+      tx.pure.u64(params.bandwidth),
+    ],
+  });
+
+  tx.moveCall({
+    target:        `${PACKAGE_ID}::marketplace::redeem_and_share`,
+    typeArguments: [SUI_COIN_TYPE],
+    arguments: [
+      escrow,
+      tx.object("0x6"),
+      token,
+      tx.pure.vector("u8", Array.from(params.clientPubkey)),
+    ],
+  });
+
+  tx.mergeCoins(tx.gas, [payment]);
+  return tx;
+}
+
+/**
  * Build a PTB that calls marketplace::redeem.
  * `escrowId` is the shared Escrow object created at purchase time.
  */
