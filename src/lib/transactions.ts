@@ -161,6 +161,7 @@ export function buildRedeemTx(params: {
     typeArguments: [SUI_COIN_TYPE],
     arguments: [
       tx.object(params.escrowId),
+      tx.object("0x6"),
       tx.object(params.tokenId),
       tx.pure.vector("u8", Array.from(params.clientPubkey)),
     ],

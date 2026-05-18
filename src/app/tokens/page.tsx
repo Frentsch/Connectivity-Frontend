@@ -8,7 +8,7 @@ import { TokenCard } from "@/components/TokenCard";
 import { AccessKeyCard } from "@/components/AccessKeyCard";
 import { dAppKit } from "@/lib/dappkit";
 import { buildClaimRefundTx } from "@/lib/transactions";
-import { ESCROW_STATUS_REDEEMED } from "@/lib/constants";
+import { ESCROW_STATUS_DELIVERED, ESCROW_STATUS_REDEEMED, ESCROW_GRACE_PERIOD} from "@/lib/constants";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,7 +28,8 @@ function escrowStatusLabel(status: number): string {
 
 function canClaimRefund(e: EscrowEntry): boolean {
   const now = Math.floor(Date.now() / 1000);
-  return e.status === ESCROW_STATUS_REDEEMED && e.expiresAt > 0 && now > e.expiresAt;
+  return (e.status === ESCROW_STATUS_REDEEMED && e.expiresAt > 0 && now > e.expiresAt && now > e.redeemedAt + ESCROW_GRACE_PERIOD) 
+  || (e.status === ESCROW_STATUS_DELIVERED && e.deliveredAt >= e.redeemedAt + ESCROW_GRACE_PERIOD) ;
 }
 
 // ── Escrow row ────────────────────────────────────────────────────────────────
@@ -67,6 +68,13 @@ function BuyerEscrowRow({ escrow, onRefunded }: { escrow: EscrowEntry; onRefunde
         <span style={{ color: escrow.status === 2 ? "green" : "#888" }}>
           {escrowStatusLabel(escrow.status)}
         </span>
+      </td>
+      
+      <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>
+        {fmtTime(escrow.redeemedAt)}
+      </td>
+      <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>
+        {fmtTime(escrow.deliveredAt)}
       </td>
       <td style={{ padding: "0.6rem 0" }}>
         {error && <span style={{ color: "red", fontSize: 12, marginRight: 8 }}>{error}</span>}
@@ -176,6 +184,8 @@ export default function TokensPage() {
                     <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Amount</th>
                     <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Expires</th>
                     <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Redeemed at</th>
+                    <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Delivered at</th>
                     <th style={{ padding: "0.5rem 0",             fontWeight: 600 }}>Action</th>
                   </tr>
                 </thead>

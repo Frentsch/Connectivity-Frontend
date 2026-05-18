@@ -21,6 +21,7 @@ export const EVENT_PURCHASE_COMPLETED    = `${PACKAGE_ID}::marketplace::Purchase
 export const ESCROW_STATUS_PURCHASED = 0;
 export const ESCROW_STATUS_REDEEMED  = 1;
 export const ESCROW_STATUS_DELIVERED = 2;
+export const ESCROW_GRACE_PERIOD = 30; 
 
 // Active network — override with NEXT_PUBLIC_NETWORK=mainnet in production
 export const DEFAULT_NETWORK =

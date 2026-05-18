@@ -8,7 +8,7 @@ import { useMyListings, useMySellerEscrows, type EscrowEntry } from "@/lib/queri
 import { ListingCard } from "@/components/ListingCard";
 import { dAppKit } from "@/lib/dappkit";
 import { buildClaimPaymentTx } from "@/lib/transactions";
-import { ESCROW_STATUS_PURCHASED, ESCROW_STATUS_DELIVERED } from "@/lib/constants";
+import { ESCROW_STATUS_PURCHASED, ESCROW_STATUS_DELIVERED, ESCROW_GRACE_PERIOD } from "@/lib/constants";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ function escrowStatusLabel(status: number, expiresAt: number): string {
 function canClaimPayment(e: EscrowEntry): boolean {
   const now = Math.floor(Date.now() / 1000);
   return (
-    e.status === ESCROW_STATUS_DELIVERED ||
+    (e.status === ESCROW_STATUS_DELIVERED && e.deliveredAt < e.redeemedAt + ESCROW_GRACE_PERIOD) ||
     (e.status === ESCROW_STATUS_PURCHASED && e.expiresAt > 0 && now > e.expiresAt)
   );
 }

@@ -132,6 +132,8 @@ export interface EscrowEntry {
   amount:    number;  // MIST
   status:    number;  // 0=purchased 1=redeemed 2=delivered
   expiresAt: number;  // Unix seconds
+  redeemedAt: number;
+  deliveredAt: number;
 }
 
 type PurchaseEvent = { token_id: string; escrow_id: string; buyer: string; seller: string; amount: string };
@@ -163,6 +165,8 @@ async function fetchEscrowEntries(filterKey: "buyer" | "seller", address: string
       amount:    Number(ev.amount),
       status:    Number(fields.status),
       expiresAt: Number(fields.expires_at),
+      redeemedAt: Number(fields.redeemed_at),
+      deliveredAt: Number(fields.delivered_at),
     }];
   });
 }
