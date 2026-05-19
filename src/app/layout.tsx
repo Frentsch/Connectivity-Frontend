@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { ClientProviders } from "@/components/ClientProviders";
 import "./globals.css";
 
@@ -14,10 +15,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ClientProviders>
           <header style={{ padding: "1rem 2rem", borderBottom: "1px solid #eee", display: "flex", gap: "1.5rem", alignItems: "center" }}>
             <strong style={{ marginRight: "auto" }}>SUI Marketplace</strong>
-            <a href="/">Buy</a>
-            <a href="/sell">Sell</a>
-            <a href="/my-listings">My Listings</a>
-            <a href="/tokens">My Tokens</a>
+            <Link href="/">Buy</Link>
+            <Link href="/sell">Sell</Link>
+            <Link href="/my-listings">My Listings</Link>
+            <Link href="/tokens">My Tokens</Link>
           </header>
           <main style={{ padding: "2rem" }}>{children}</main>
         </ClientProviders>
