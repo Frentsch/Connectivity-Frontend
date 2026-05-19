@@ -10,7 +10,7 @@ import { dAppKit } from "@/lib/dappkit";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY, TOKEN_TYPE, ACCESS_KEY_TYPE } from "@/lib/constants";
 import { ecdhKeypairFromSecret, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
-import { useMasterSecret } from "@/lib/hooks";
+import { useMasterSecret } from "@/lib/MasterSecretContext";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

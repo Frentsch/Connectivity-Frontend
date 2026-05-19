@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { ecdhKeypairFromSecret, eciesDecrypt } from "@/lib/crypto";
-import { useMasterSecret } from "@/lib/hooks";
+import { useMasterSecret } from "@/lib/MasterSecretContext";
 
 interface Props {
   accessKeyObject: {

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { dAppKit } from "@/lib/dappkit";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
-import { useMasterSecret } from "@/lib/hooks";
+import { useMasterSecret } from "@/lib/MasterSecretContext";
 import { buildPurchaseAndRedeemTx } from "@/lib/transactions";
 import { ecdhKeypairFromSecret, buildClientPubkey } from "@/lib/crypto";
 import { EVENT_REDEMPTION_DELIVERY, ACCESS_KEY_TYPE } from "@/lib/constants";
