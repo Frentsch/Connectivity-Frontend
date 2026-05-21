@@ -87,10 +87,8 @@ function interpolateFraction(tiers: DiscountTierJs[], value: number): number {
 function computePolicyPrice(
   policy: PricingPolicyJs,
   bandwidthKbs: number, durationSecs: number,
-  maxBw: number, maxDur: number,
 ): bigint {
-  if (maxBw <= 0 || maxDur <= 0) return BigInt(policy.min_price);
-  const linear   = policy.base_price_mist * (bandwidthKbs / maxBw) * (durationSecs / maxDur);
+  const linear   = policy.base_price_mist * bandwidthKbs * durationSecs;
   const bwFrac   = interpolateFraction(policy.bw_tiers,  bandwidthKbs) / 10_000;
   const durFrac  = interpolateFraction(policy.dur_tiers, durationSecs) / 10_000;
   const computed = linear * bwFrac * durFrac;
@@ -137,7 +135,7 @@ function PurchaseForm({ listingId, tokenId, policy, token, fields }: FormProps) 
 
   // maxDur from the token itself (not the user's selection) for the default seed
   const tokenMaxDur     = Number(expiresAt) - Number(validFrom);
-  const defaultEstimate = computePolicyPrice(policy, maxBw, tokenMaxDur, maxBw, tokenMaxDur);
+  const defaultEstimate = computePolicyPrice(policy, maxBw, tokenMaxDur);
   const defaultEstimateSui = (Number(defaultEstimate) / 1e9).toFixed(9);
 
   const [inputFrom,     setInputFrom]     = useState(toDatetimeLocal(validFrom));
@@ -151,7 +149,7 @@ function PurchaseForm({ listingId, tokenId, policy, token, fields }: FormProps) 
   const maxPriceMist = BigInt(Math.round((Number(inputMaxPrice) || 0) * 1e9));
 
   const curDur         = curToSecs - curFromSecs;
-  const estimatedPrice = computePolicyPrice(policy, bwVal, curDur, maxBw, tokenMaxDur);
+  const estimatedPrice = computePolicyPrice(policy, bwVal, curDur);
   const effectiveEstimate = estimatedPrice;
 
   // Keep the Max price input in sync with the estimate whenever parameters change.

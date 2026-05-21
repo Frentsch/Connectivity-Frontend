@@ -28,7 +28,7 @@ export function CreateListingForm() {
   const [maxBandwidth, setMaxBandwidth] = useState("100");
 
   // ── listing fields ────────────────────────────────────────────────────────────
-  const [priceSui,       setPriceSui]       = useState("0.01");
+  const [unitPriceMist,  setUnitPriceMist]  = useState("28"); // MIST per (kB/s × second)
   const [minPriceSui,    setMinPriceSui]    = useState("0");
   const [minBandwidth,   setMinBandwidth]   = useState("10");
   const [minDuration,    setMinDuration]    = useState("60");
@@ -53,7 +53,7 @@ export function CreateListingForm() {
         validFrom:       BigInt(Math.floor(new Date(validFrom).getTime() / 1000)),
         expiresAt:       BigInt(Math.floor(new Date(expiresAt).getTime() / 1000)),
         maxBandwidth:    BigInt(parseInt(maxBandwidth, 10)),
-        priceMist:       suiToMist(priceSui),
+        priceMist:       BigInt(parseInt(unitPriceMist, 10) || 0),
         minPriceMist:    suiToMist(minPriceSui),
         minBandwidth:    BigInt(parseInt(minBandwidth, 10)),
         minDuration:     BigInt(parseInt(minDuration, 10)),
@@ -96,6 +96,16 @@ export function CreateListingForm() {
       </div>
     );
   }
+
+  const totalForFullListing = (() => {
+    const unitMist = parseInt(unitPriceMist, 10) || 0;
+    const bw       = parseInt(maxBandwidth, 10)  || 0;
+    const durSecs  = Math.max(0,
+      Math.floor(new Date(expiresAt).getTime()  / 1000) -
+      Math.floor(new Date(validFrom).getTime() / 1000)
+    );
+    return (unitMist * bw * durSecs / 1e9).toFixed(4);
+  })();
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.9rem", maxWidth: 480 }}>
@@ -150,9 +160,12 @@ export function CreateListingForm() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
             <label style={labelStyle}>
-              Full Price (SUI)
-              <input style={inputStyle} type="number" min="0" step="0.000000001" value={priceSui}
-                onChange={e => setPriceSui(e.target.value)} required />
+              Unit Price (MIST / kB/s·s)
+              <input style={inputStyle} type="number" min="1" step="1" value={unitPriceMist}
+                onChange={e => setUnitPriceMist(e.target.value)} required />
+              <span style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                ≈ {totalForFullListing} SUI for full listing
+              </span>
             </label>
             <label style={labelStyle}>
               Min Price (SUI)

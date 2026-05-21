@@ -8,7 +8,7 @@ import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useMasterSecret } from "@/lib/MasterSecretContext";
 import { buildPurchaseAndRedeemTx } from "@/lib/transactions";
 import { ecdhKeypairFromSecret, buildClientPubkey } from "@/lib/crypto";
-import { EVENT_REDEMPTION_DELIVERY, ACCESS_KEY_TYPE } from "@/lib/constants";
+import { EVENT_REDEMPTION_DELIVERY, EVENT_PURCHASE_COMPLETED, ACCESS_KEY_TYPE } from "@/lib/constants";
 
 interface Props {
   listingId:    string;
@@ -31,9 +31,7 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
   const router                = useRouter();
   const { getMasterSecret, publicKey } = useMasterSecret();
 
-  const [state, setState]     = useState<BtnState>({ tag: 'idle' });
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [privKey, setPrivKey] = useState<Uint8Array | null>(null);
+  const [state, setState] = useState<BtnState>({ tag: 'idle' });
 
   // ── Poll delivery events while waiting ──────────────────────────────────────
   const { data: deliveryEvents } = useQuery({
@@ -85,15 +83,9 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
 
   // ── Click handler ────────────────────────────────────────────────────────────
   async function handleClick() {
-    if (!tokenId) {
-      setState({ tag: 'error', message: 'Token ID unavailable — cannot track delivery' });
-      return;
-    }
     setState({ tag: 'pending' });
     try {
       const pub = publicKey ?? ecdhKeypairFromSecret(await getMasterSecret()).pub;
-      const masterSecret = await getMasterSecret();
-      setPrivKey(ecdhKeypairFromSecret(masterSecret).priv);
 
       const tx = buildPurchaseAndRedeemTx({
         listingId,
@@ -104,8 +96,30 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
         clientPubkey: buildClientPubkey(pub),
       });
 
-      await dAppKit.signAndExecuteTransaction({ transaction: tx });
-      setState({ tag: 'waiting', tokenId });
+      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+
+      // The buyer's token may be a split of the original listing token (different ID).
+      // Parse the PurchaseCompleted event to get the actual token ID instead of
+      // relying on the listing's tokenId prop, which won't match for partial purchases.
+      let actualTokenId = tokenId ?? '';
+      if ((result as any).$kind === 'Transaction') {
+        const digest = (result as any).Transaction.digest;
+        const events = await (dAppKit.getClient() as any).queryEvents({
+          query: { Transaction: digest },
+        });
+        const purchaseEvent = (events.data as any[])?.find(
+          (e: any) => e.type === EVENT_PURCHASE_COMPLETED,
+        );
+        if (purchaseEvent?.parsedJson?.token_id) {
+          actualTokenId = purchaseEvent.parsedJson.token_id;
+        }
+      }
+
+      if (!actualTokenId) {
+        setState({ tag: 'error', message: 'Could not determine purchased token ID' });
+        return;
+      }
+      setState({ tag: 'waiting', tokenId: actualTokenId });
     } catch (err: unknown) {
       setState({ tag: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
     }

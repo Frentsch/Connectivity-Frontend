@@ -9,14 +9,16 @@ interface Props {
     pricing_policy?: {
       fields?: {
         base_price_mist?: string;
+        min_price?:       string;
       };
     };
     token?: {
       fields?: {
         service_name?: string;
         ip_address?: string;
-        expires_at?: string;
-        bandwidth?: string;
+        valid_from?:  string;
+        expires_at?:  string;
+        bandwidth?:   string;
       };
     };
   };
@@ -24,10 +26,15 @@ interface Props {
 }
 
 export function ListingCard({ objectId, fields, manageHref }: Props) {
-  const token     = fields.token?.fields ?? {};
-  const baseMist  = Number(fields.pricing_policy?.fields?.base_price_mist ?? 0);
-  const priceSui  = (baseMist / 1e9).toFixed(4);
-  const expiresAt = Number(token.expires_at ?? 0);
+  const token        = fields.token?.fields ?? {};
+  const baseMist     = Number(fields.pricing_policy?.fields?.base_price_mist ?? 0);
+  const minPriceMist = Number(fields.pricing_policy?.fields?.min_price ?? 0);
+  const bandwidth    = Number(token.bandwidth  ?? 0);
+  const validFrom    = Number(token.valid_from ?? 0);
+  const expiresAt    = Number(token.expires_at ?? 0);
+  const duration     = Math.max(0, expiresAt - validFrom);
+  const totalMist    = Math.max(minPriceMist, baseMist * bandwidth * duration);
+  const priceSui     = (totalMist / 1e9).toFixed(4);
   const expiresStr = expiresAt === 0 ? "No expiry" : new Date(expiresAt * 1000).toLocaleDateString();
 
   return (
