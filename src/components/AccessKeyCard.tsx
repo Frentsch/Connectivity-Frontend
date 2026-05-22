@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { ecdhKeypairFromSecret, eciesDecrypt } from "@/lib/crypto";
 import { useMasterSecret } from "@/lib/MasterSecretContext";
 
@@ -43,11 +42,9 @@ export function AccessKeyCard({ accessKeyObject }: Props) {
   const [decrypting, setDecrypting]     = useState(false);
   const [copied, setCopied]             = useState(false);
 
-  const account             = useCurrentAccount();
   const { getMasterSecret } = useMasterSecret();
 
   async function handleDecrypt() {
-    if (!account || !fields) return;
     setDecryptError(null);
     setDecrypting(true);
     try {
@@ -129,21 +126,14 @@ export function AccessKeyCard({ accessKeyObject }: Props) {
           </>
         ) : (
           <div>
-            <p style={{ fontSize: 13, color: "#666", margin: "0 0 0.5rem" }}>
-              Sign with your wallet to decrypt the auth key.
-            </p>
             {decryptError && <p style={{ color: "red", fontSize: 12, margin: "0 0 0.4rem" }}>{decryptError}</p>}
-            {!account ? (
-              <p style={{ fontSize: 12, color: "#aaa", margin: 0 }}>Connect wallet to decrypt.</p>
-            ) : (
-              <button
-                onClick={handleDecrypt}
-                disabled={decrypting}
-                style={{ fontSize: 13, padding: "4px 12px", cursor: "pointer", opacity: decrypting ? 0.6 : 1 }}
-              >
-                {decrypting ? "Decrypting…" : "Decrypt with wallet"}
-              </button>
-            )}
+            <button
+              onClick={handleDecrypt}
+              disabled={decrypting}
+              style={{ fontSize: 13, padding: "4px 12px", cursor: "pointer", opacity: decrypting ? 0.6 : 1 }}
+            >
+              {decrypting ? "Decrypting…" : "Decrypt auth key"}
+            </button>
           </div>
         )}
       </div>

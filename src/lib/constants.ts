@@ -27,13 +27,3 @@ export const ESCROW_GRACE_PERIOD = 30;
 export const DEFAULT_NETWORK =
   (process.env.NEXT_PUBLIC_NETWORK as "devnet" | "testnet" | "mainnet") ?? "testnet";
 
-// UserSecret — stores the Seal-encrypted master key on-chain
-export const USER_SECRET_TYPE = `${PACKAGE_ID}::user_secret::UserSecret`;
-
-// Seal testnet key server configs — object IDs from https://seal-docs.wal.app
-// Replace with mainnet server object IDs before deploying.
-export const SEAL_SERVER_CONFIGS = [
-  { objectId: process.env.NEXT_PUBLIC_SEAL_SERVER_1 ?? "", weight: 1 },
-  { objectId: process.env.NEXT_PUBLIC_SEAL_SERVER_2 ?? "", weight: 1 },
-];
-export const SEAL_THRESHOLD = 2;

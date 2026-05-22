@@ -1,6 +1,5 @@
 "use client";
 
-import { ConnectButton } from "@/components/ConnectButton";
 import { useListings } from "@/lib/queries";
 import { ListingCard } from "@/components/ListingCard";
 
@@ -21,7 +20,6 @@ export default function BrowsePage() {
         <h1 style={{ margin: 0 }}>Browse Listings</h1>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <button onClick={() => refetch()} style={{ fontSize: 13 }}>↻ Refresh</button>
-          <ConnectButton />
         </div>
       </div>
 

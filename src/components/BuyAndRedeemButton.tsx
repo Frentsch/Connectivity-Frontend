@@ -4,11 +4,12 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { dAppKit } from "@/lib/dappkit";
-import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { useLocalWallet } from "@/lib/LocalWalletContext";
 import { useMasterSecret } from "@/lib/MasterSecretContext";
+import { signAndExecute } from "@/lib/localSigner";
 import { buildPurchaseAndRedeemTx } from "@/lib/transactions";
 import { ecdhKeypairFromSecret, buildClientPubkey } from "@/lib/crypto";
-import { EVENT_REDEMPTION_DELIVERY, EVENT_PURCHASE_COMPLETED, ACCESS_KEY_TYPE } from "@/lib/constants";
+import { EVENT_REDEMPTION_DELIVERY, ACCESS_KEY_TYPE } from "@/lib/constants";
 
 interface Props {
   listingId:    string;
@@ -27,15 +28,15 @@ type BtnState =
   | { tag: 'error'; message: string }
 
 export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom, expiresAt, bandwidth, disabled }: Props) {
-  const account               = useCurrentAccount();
-  const router                = useRouter();
+  const { address }                    = useLocalWallet();
+  const router                         = useRouter();
   const { getMasterSecret, publicKey } = useMasterSecret();
-
-  const [state, setState] = useState<BtnState>({ tag: 'idle' });
+  const [state, setState]              = useState<BtnState>({ tag: 'idle' });
 
   // ── Poll delivery events while waiting ──────────────────────────────────────
   const { data: deliveryEvents } = useQuery({
     queryKey: ['buyRedeemDelivery', EVENT_REDEMPTION_DELIVERY],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     queryFn:  () => (dAppKit.getClient() as any).queryEvents({
       query: { MoveEventType: EVENT_REDEMPTION_DELIVERY },
       limit: 50,
@@ -57,13 +58,14 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
 
   // ── Poll owned AccessKeys once delivery event arrives ────────────────────────
   const { data: ownedAccessKeys } = useQuery({
-    queryKey: ['buyRedeemAccessKeys', account?.address],
+    queryKey: ['buyRedeemAccessKeys', address],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     queryFn:  () => (dAppKit.getClient() as any).getOwnedObjects({
-      owner:   account?.address ?? '',
+      owner:   address ?? '',
       filter:  { StructType: ACCESS_KEY_TYPE },
       options: { showContent: true },
     }),
-    enabled:         !!deliveredTokenId && !!account?.address,
+    enabled:         !!deliveredTokenId && !!address,
     refetchInterval: deliveredTokenId ? 2000 : false,
   });
 
@@ -78,8 +80,6 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
       router.push(`/tokens/${key.data.objectId}`);
     }
   }, [ownedAccessKeys, deliveredTokenId, router]);
-
-  if (!account) return <p>Connect your wallet to purchase.</p>;
 
   // ── Click handler ────────────────────────────────────────────────────────────
   async function handleClick() {
@@ -96,23 +96,16 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
         clientPubkey: buildClientPubkey(pub),
       });
 
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      const result = await signAndExecute(tx);
 
       // The buyer's token may be a split of the original listing token (different ID).
-      // Parse the PurchaseCompleted event to get the actual token ID instead of
-      // relying on the listing's tokenId prop, which won't match for partial purchases.
+      // The PurchaseCompleted event carries the actual token ID.
       let actualTokenId = tokenId ?? '';
-      if ((result as any).$kind === 'Transaction') {
-        const digest = (result as any).Transaction.digest;
-        const events = await (dAppKit.getClient() as any).queryEvents({
-          query: { Transaction: digest },
-        });
-        const purchaseEvent = (events.data as any[])?.find(
-          (e: any) => e.type === EVENT_PURCHASE_COMPLETED,
-        );
-        if (purchaseEvent?.parsedJson?.token_id) {
-          actualTokenId = purchaseEvent.parsedJson.token_id;
-        }
+      const purchaseEvent = (result.events as any[])?.find(
+        (e: any) => (e.type as string)?.includes("::marketplace::PurchaseCompleted"),
+      );
+      if (purchaseEvent?.parsedJson?.token_id) {
+        actualTokenId = purchaseEvent.parsedJson.token_id;
       }
 
       if (!actualTokenId) {
@@ -150,7 +143,7 @@ export function BuyAndRedeemButton({ listingId, tokenId, maxPriceMist, validFrom
   return (
     <button
       onClick={handleClick}
-      disabled={state.tag === 'pending' || disabled}
+      disabled={state.tag === 'pending' || disabled || !address}
       style={{ padding: '0.75rem 2rem', fontSize: '1rem' }}
     >
       {state.tag === 'pending'

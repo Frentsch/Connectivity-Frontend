@@ -214,21 +214,6 @@ export function buildRedeemTx(params: {
   return tx;
 }
 
-/**
- * Build a PTB that calls user_secret::register_secret.
- * Stores the X25519 public key (openly) and the Seal-encrypted master secret.
- */
-export function buildRegisterSecretTx(publicKey: Uint8Array, encryptedSecret: Uint8Array): Transaction {
-  const tx = new Transaction();
-  tx.moveCall({
-    target:    `${PACKAGE_ID}::user_secret::register_secret`,
-    arguments: [
-      tx.pure.vector("u8", Array.from(publicKey)),
-      tx.pure.vector("u8", Array.from(encryptedSecret)),
-    ],
-  });
-  return tx;
-}
 
 /** Seller claims payment from a delivered (or expired unpurchased) escrow. */
 export function buildClaimPaymentTx(escrowId: string): Transaction {

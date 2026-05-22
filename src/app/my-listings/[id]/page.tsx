@@ -2,9 +2,8 @@
 
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ConnectButton } from "@/components/ConnectButton";
 import { useListing } from "@/lib/queries";
-import { dAppKit } from "@/lib/dappkit";
+import { signAndExecute } from "@/lib/localSigner";
 import { buildDelistTx } from "@/lib/transactions";
 
 function fmtTime(secs: string | number | undefined): string {
@@ -56,7 +55,7 @@ export default function MyListingDetailPage({ params }: { params: Promise<{ id: 
     setError(null);
     setDelisting(true);
     try {
-      await dAppKit.signAndExecuteTransaction({ transaction: buildDelistTx(id) });
+      await signAndExecute(buildDelistTx(id));
       router.push("/my-listings");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delist failed");
@@ -77,7 +76,6 @@ export default function MyListingDetailPage({ params }: { params: Promise<{ id: 
             {isExpired ? "Expired" : "Active"}
           </span>
         </div>
-        <ConnectButton />
       </div>
 
       <h3 style={{ margin: "0 0 0.5rem", fontSize: 14, color: "#888", textTransform: "uppercase", letterSpacing: 1 }}>

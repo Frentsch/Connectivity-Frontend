@@ -2,15 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ConnectButton } from "@/components/ConnectButton";
-import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { signAndExecute } from "@/lib/localSigner";
 import { useMyListings, useMySellerEscrows, type EscrowEntry } from "@/lib/queries";
 import { ListingCard } from "@/components/ListingCard";
-import { dAppKit } from "@/lib/dappkit";
 import { buildClaimPaymentTx } from "@/lib/transactions";
 import { ESCROW_STATUS_PURCHASED, ESCROW_STATUS_DELIVERED, ESCROW_GRACE_PERIOD } from "@/lib/constants";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtMist(mist: number): string {
   return `${(mist / 1_000_000_000).toFixed(4)} SUI`;
@@ -24,7 +20,7 @@ function escrowStatusLabel(status: number, expiresAt: number): string {
   const now = Math.floor(Date.now() / 1000);
   if (status === ESCROW_STATUS_PURCHASED) return expiresAt > 0 && now > expiresAt ? "Expired — not redeemed" : "Awaiting redemption";
   if (status === ESCROW_STATUS_DELIVERED) return "Delivered ✓";
-  return "Awaiting delivery";   // REDEEMED
+  return "Awaiting delivery";
 }
 
 function canClaimPayment(e: EscrowEntry): boolean {
@@ -35,8 +31,6 @@ function canClaimPayment(e: EscrowEntry): boolean {
   );
 }
 
-// ── Escrow row ────────────────────────────────────────────────────────────────
-
 function SellerEscrowRow({ escrow, onClaimed }: { escrow: EscrowEntry; onClaimed: () => void }) {
   const [claiming, setClaiming] = useState(false);
   const [error, setError]       = useState<string | null>(null);
@@ -45,7 +39,7 @@ function SellerEscrowRow({ escrow, onClaimed }: { escrow: EscrowEntry; onClaimed
     setClaiming(true);
     setError(null);
     try {
-      await dAppKit.signAndExecuteTransaction({ transaction: buildClaimPaymentTx(escrow.escrowId) });
+      await signAndExecute(buildClaimPaymentTx(escrow.escrowId));
       onClaimed();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Transaction failed");
@@ -61,12 +55,8 @@ function SellerEscrowRow({ escrow, onClaimed }: { escrow: EscrowEntry; onClaimed
       <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13, fontFamily: "monospace", color: "#888" }}>
         {escrow.tokenId.slice(0, 12)}…
       </td>
-      <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>
-        {fmtMist(escrow.amount)}
-      </td>
-      <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>
-        {fmtTime(escrow.expiresAt)}
-      </td>
+      <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>{fmtMist(escrow.amount)}</td>
+      <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>{fmtTime(escrow.expiresAt)}</td>
       <td style={{ padding: "0.6rem 1rem 0.6rem 0", fontSize: 13 }}>
         <span style={{ color: escrow.status === ESCROW_STATUS_DELIVERED ? "green" : "#888" }}>
           {escrowStatusLabel(escrow.status, escrow.expiresAt)}
@@ -86,10 +76,7 @@ function SellerEscrowRow({ escrow, onClaimed }: { escrow: EscrowEntry; onClaimed
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
-
 export default function MyListingsPage() {
-  const account = useCurrentAccount();
   const { data: listings = [], isLoading: listingsLoading, refetch: refetchListings } = useMyListings();
   const { data: escrows  = [], isLoading: escrowsLoading,  refetch: refetchEscrows  } = useMySellerEscrows();
 
@@ -97,18 +84,12 @@ export default function MyListingsPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <h1 style={{ margin: 0 }}>My Listings</h1>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <button onClick={() => { refetchListings(); refetchEscrows(); }} style={{ fontSize: 13 }}>↻ Refresh</button>
-          <ConnectButton />
-        </div>
+        <button onClick={() => { refetchListings(); refetchEscrows(); }} style={{ fontSize: 13 }}>↻ Refresh</button>
       </div>
 
-      {!account && <p style={{ color: "#888" }}>Connect your wallet to view your listings.</p>}
+      {listingsLoading && <p>Loading listings…</p>}
 
-      {/* ── Active listings ──────────────────────────────────────────────── */}
-      {account && listingsLoading && <p>Loading listings…</p>}
-
-      {account && !listingsLoading && listings.length === 0 && (
+      {!listingsLoading && listings.length === 0 && (
         <p style={{ color: "#888" }}>
           No active listings.{" "}
           <Link href="/sell" style={{ color: "#4DA2FF" }}>Create one →</Link>
@@ -120,48 +101,35 @@ export default function MyListingsPage() {
           const objectId = obj.data!.objectId;
           const fields   = (obj.data!.content as any)?.fields ?? {};
           return (
-            <ListingCard
-              key={objectId}
-              objectId={objectId}
-              fields={fields}
-              manageHref={`/my-listings/${objectId}`}
-            />
+            <ListingCard key={objectId} objectId={objectId} fields={fields} manageHref={`/my-listings/${objectId}`} />
           );
         })}
       </div>
 
-      {/* ── Escrow payments ──────────────────────────────────────────────── */}
-      {account && (
-        <>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: "0.75rem" }}>Escrow Payments</h2>
-
-          {escrowsLoading && <p>Loading…</p>}
-
-          {!escrowsLoading && escrows.length === 0 && (
-            <p style={{ color: "#888", fontSize: 14 }}>No pending escrow payments.</p>
-          )}
-
-          {!escrowsLoading && escrows.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
-                    <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Token</th>
-                    <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Amount</th>
-                    <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Expires</th>
-                    <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: "0.5rem 0",             fontWeight: 600 }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {escrows.map((e) => (
-                    <SellerEscrowRow key={e.escrowId} escrow={e} onClaimed={refetchEscrows} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+      <h2 style={{ fontSize: "1.1rem", marginBottom: "0.75rem" }}>Escrow Payments</h2>
+      {escrowsLoading && <p>Loading…</p>}
+      {!escrowsLoading && escrows.length === 0 && (
+        <p style={{ color: "#888", fontSize: 14 }}>No pending escrow payments.</p>
+      )}
+      {!escrowsLoading && escrows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
+                <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Token</th>
+                <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Amount</th>
+                <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Expires</th>
+                <th style={{ padding: "0.5rem 1rem 0.5rem 0", fontWeight: 600 }}>Status</th>
+                <th style={{ padding: "0.5rem 0",             fontWeight: 600 }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {escrows.map((e) => (
+                <SellerEscrowRow key={e.escrowId} escrow={e} onClaimed={refetchEscrows} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

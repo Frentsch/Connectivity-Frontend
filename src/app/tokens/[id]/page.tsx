@@ -3,10 +3,10 @@
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useToken, useEscrowForToken } from "@/lib/queries";
-import { ConnectButton } from "@/components/ConnectButton";
-import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocalWallet } from "@/lib/LocalWalletContext";
 import { dAppKit } from "@/lib/dappkit";
+import { signAndExecute } from "@/lib/localSigner";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY, TOKEN_TYPE, ACCESS_KEY_TYPE } from "@/lib/constants";
 import { ecdhKeypairFromSecret, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
@@ -55,8 +55,8 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   const [errorMsg, setErrorMsg]         = useState<string | null>(null);
   const [copied, setCopied]             = useState(false);
 
-  const account                        = useCurrentAccount();
   const router                         = useRouter();
+  const { address }                    = useLocalWallet();
   const { getMasterSecret, publicKey } = useMasterSecret();
   const { data: escrowId }             = useEscrowForToken(objectId);
 
@@ -73,14 +73,14 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   });
 
   const { data: ownedAccessKeys } = useQuery({
-    queryKey: ["ownedAccessKeys", account?.address],
+    queryKey: ["ownedAccessKeys", address],
     queryFn: () =>
       dAppKit.getClient().getOwnedObjects({
-        owner: account?.address ?? "",
+        owner: address ?? "",
         filter: { StructType: ACCESS_KEY_TYPE },
         options: { showContent: true },
       }),
-    enabled: redeemState === "delivered" && !!account?.address,
+    enabled: redeemState === "delivered" && !!address,
     refetchInterval: 2000,
   });
 
@@ -116,7 +116,6 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   }
 
   async function handleRedeem() {
-    if (!account) return;
     setErrorMsg(null);
     setRedeemState("redeeming");
 
@@ -130,9 +129,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
 
       if (!escrowId) throw new Error("Escrow not found for this token");
       const clientPubkey = buildClientPubkey(pub);
-      await dAppKit.signAndExecuteTransaction({
-        transaction: buildRedeemTx({ escrowId, tokenId: objectId, clientPubkey }),
-      });
+      await signAndExecute(buildRedeemTx({ escrowId, tokenId: objectId, clientPubkey }));
       setRedeemState("waiting");
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Redemption failed");
@@ -141,7 +138,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
   }
 
   async function handleDecrypt() {
-    if (!account || !deliveredKey) return;
+    if (!deliveredKey) return;
     setDecryptError(null);
     try {
       const { priv } = ecdhKeypairFromSecret(await getMasterSecret());
@@ -161,7 +158,6 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
             {isExpired ? "Expired" : "Active"}
           </span>
         </div>
-        <ConnectButton />
       </div>
 
       <table style={{ borderCollapse: "collapse", marginBottom: "1.5rem" }}>
@@ -179,10 +175,7 @@ function AccessTokenDetail({ objectId, fields }: { objectId: string; fields: Rec
 
       {!isExpired && (
         <div style={{ borderTop: "1px solid #eee", paddingTop: "1rem" }}>
-          {redeemState === "idle" && !account && (
-            <p style={{ color: "#aaa" }}>Connect wallet to redeem.</p>
-          )}
-          {redeemState === "idle" && account && (
+          {redeemState === "idle" && (
             <button onClick={handleRedeem} style={{ padding: "0.5rem 2rem", fontSize: "1rem" }}>
               Redeem Token
             </button>
@@ -248,11 +241,9 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
   const [copied,    setCopied]          = useState(false);
   const [copiedCmd, setCopiedCmd]       = useState(false);
 
-  const account             = useCurrentAccount();
   const { getMasterSecret } = useMasterSecret();
 
   async function handleDecrypt() {
-    if (!account) return;
     setDecryptError(null);
     setDecrypting(true);
     try {
@@ -274,7 +265,6 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
           <h1 style={{ margin: 0 }}>{f.service_name}</h1>
           <span style={{ color: "green", fontWeight: 600 }}>✓ Access Key</span>
         </div>
-        <ConnectButton />
       </div>
 
       <table style={{ borderCollapse: "collapse", marginBottom: "1.5rem" }}>
@@ -313,17 +303,13 @@ function AccessKeyDetail({ objectId, fields }: { objectId: string; fields: Recor
               Decrypt the auth key for this service.
             </p>
             {decryptError && <p style={{ color: "red", fontSize: 13, margin: "0 0 0.5rem" }}>{decryptError}</p>}
-            {!account ? (
-              <p style={{ color: "#aaa", fontSize: 13 }}>Connect wallet to decrypt.</p>
-            ) : (
-              <button
-                onClick={handleDecrypt}
-                disabled={decrypting}
-                style={{ padding: "0.5rem 1.5rem", fontSize: "0.9rem", opacity: decrypting ? 0.6 : 1 }}
-              >
-                {decrypting ? "Decrypting…" : "Decrypt"}
-              </button>
-            )}
+            <button
+              onClick={handleDecrypt}
+              disabled={decrypting}
+              style={{ padding: "0.5rem 1.5rem", fontSize: "0.9rem", opacity: decrypting ? 0.6 : 1 }}
+            >
+              {decrypting ? "Decrypting…" : "Decrypt"}
+            </button>
           </div>
         )}
       </div>

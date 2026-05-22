@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useState, useEffect } from "react";
-import { ConnectButton } from "@/components/ConnectButton";
 import { useListing } from "@/lib/queries";
 import { BuyButton } from "@/components/BuyButton";
 import { BuyAndRedeemButton } from "@/components/BuyAndRedeemButton";
@@ -333,10 +332,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const policy    = parsePricingPolicy(fields.pricing_policy);
   return (
     <div style={{ maxWidth: 600 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 style={{ margin: 0 }}>{token.service_name ?? id}</h1>
-        <ConnectButton />
-      </div>
+      <h1 style={{ marginBottom: "1.5rem" }}>{token.service_name ?? id}</h1>
 
       <PurchaseForm
         listingId={id}

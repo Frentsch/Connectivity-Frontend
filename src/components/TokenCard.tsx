@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { useLocalWallet } from "@/lib/LocalWalletContext";
 import { dAppKit } from "@/lib/dappkit";
+import { signAndExecute } from "@/lib/localSigner";
 import { buildRedeemTx } from "@/lib/transactions";
 import { EVENT_REDEMPTION_DELIVERY } from "@/lib/constants";
 import { ecdhKeypairFromSecret, buildClientPubkey, eciesDecrypt } from "@/lib/crypto";
@@ -45,7 +46,7 @@ export function TokenCard({ tokenObject }: Props) {
   const [errorMsg, setErrorMsg]       = useState<string | null>(null);
   const [copied, setCopied]           = useState(false);
 
-  const account                         = useCurrentAccount();
+  const { address }                     = useLocalWallet();
   const { getMasterSecret, publicKey }  = useMasterSecret();
   const { data: escrowId }              = useEscrowForToken(tokenId);
 
@@ -84,7 +85,6 @@ export function TokenCard({ tokenObject }: Props) {
   }, [redeemState, deliveredKey, privKey]);
 
   async function handleRedeem() {
-    if (!account) return;
     setErrorMsg(null);
     setRedeemState("redeeming");
 
@@ -104,9 +104,7 @@ export function TokenCard({ tokenObject }: Props) {
 
       if (!escrowId) throw new Error("Escrow not found for this token");
       const clientPubkey = buildClientPubkey(pub);
-      await dAppKit.signAndExecuteTransaction({
-        transaction: buildRedeemTx({ escrowId, tokenId, clientPubkey }),
-      });
+      await signAndExecute(buildRedeemTx({ escrowId, tokenId, clientPubkey }));
       setRedeemState("waiting");
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Redemption failed");
@@ -115,7 +113,6 @@ export function TokenCard({ tokenObject }: Props) {
   }
 
   async function handleDecrypt() {
-    if (!account) return;
     setDecryptError(null);
     try {
       const masterSecret = await getMasterSecret();
@@ -182,10 +179,7 @@ export function TokenCard({ tokenObject }: Props) {
 
       {!isExpired && (
         <div style={{ marginTop: "1rem", borderTop: "1px solid #eee", paddingTop: "0.75rem" }}>
-          {redeemState === "idle" && !account && (
-            <p style={{ fontSize: 12, color: "#aaa", margin: 0 }}>Connect wallet to redeem.</p>
-          )}
-          {redeemState === "idle" && account && (
+          {redeemState === "idle" && (
             <button onClick={handleRedeem} style={{ padding: "0.5rem 1.5rem", fontSize: "0.9rem" }}>
               Redeem Token
             </button>

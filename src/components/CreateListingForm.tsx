@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { dAppKit } from "@/lib/dappkit";
+import { signAndExecute } from "@/lib/localSigner";
 import { buildCreateAndListTx } from "@/lib/transactions";
 
 function toDatetimeLocal(unixSecs: number): string {
@@ -61,21 +61,11 @@ export function CreateListingForm() {
         timeGranularity: BigInt(parseInt(timeGranularity, 10)),
       });
 
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
-      if (result.$kind === "Transaction") {
-        const digest = result.Transaction.digest;
-        const full = await dAppKit.getClient().core.getTransaction({
-          digest,
-          include: { effects: true, objectTypes: true },
-        });
-        if (full.$kind === "Transaction") {
-          const { effects, objectTypes } = full.Transaction;
-          const listing = effects?.changedObjects
-            .filter(o => o.idOperation === "Created")
-            .find(o => objectTypes?.[o.objectId]?.includes("::marketplace::ServiceListing"));
-          setListingId(listing?.objectId ?? digest);
-        }
-      }
+      const result = await signAndExecute(tx);
+      const listing = (result.objectChanges as any[])?.find(
+        (c: any) => c.type === "created" && (c.objectType as string)?.includes("::marketplace::ServiceListing"),
+      );
+      setListingId(listing?.objectId ?? result.digest);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Transaction failed");
     } finally {
